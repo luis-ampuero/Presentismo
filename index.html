@@ -546,7 +546,7 @@ let ADMIN_DASH_STATE = { ym: todayStr().slice(0,7), lider:'', ciudad:'' };
 let LAST_DASHBOARD = null;
 function exportDashboardExcel(){
   if(!LAST_DASHBOARD){ toast('Primero abre el dashboard'); return; }
-  const { perDay, metricRows, ym } = LAST_DASHBOARD;
+  const { perDay, metricRows, ym, scope, detailByDni } = LAST_DASHBOARD;
   const header = ['Métrica', ...perDay.map(d=>d.dateStr)];
   const rows = [header];
   const dayVal = (d,key)=>{
@@ -564,8 +564,23 @@ function exportDashboardExcel(){
   rows.push(['TOTAL', ...perDay.map(d=>dayVal(d,'TOTAL'))]);
   rows.push(['% AUSENTISMO', ...perDay.map(d=>dayVal(d,'PCT'))]);
   const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  // Hoja 2: detalle exacto por asesor y día (qué día faltó cada uno)
+  const detailHeader = ['DNI','Nombre','Líder','Ciudad', ...perDay.map(d=>d.dateStr)];
+  const detailRows = [detailHeader];
+  scope.forEach(a=>{
+    const line = [a.dni, a.nombre, a.lider, a.ciudad||''];
+    perDay.forEach(d=>{
+      if(d.sunday){ line.push('-'); return; }
+      line.push(detailByDni[a.dni] && detailByDni[a.dni][d.dateStr] ? detailByDni[a.dni][d.dateStr] : '');
+    });
+    detailRows.push(line);
+  });
+  const wsDetail = XLSX.utils.aoa_to_sheet(detailRows);
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, ym);
+  XLSX.utils.book_append_sheet(wb, ws, 'Resumen');
+  XLSX.utils.book_append_sheet(wb, wsDetail, 'Detalle por asesor');
   XLSX.writeFile(wb, `dashboard_${ym}.xlsx`);
 }
 
@@ -937,6 +952,8 @@ async function renderTabDashboard(){
   const dniSet = new Set(scope.map(a=>a.dni));
 
   const perDay = [];
+  const detailByDni = {};
+  scope.forEach(a=>{ detailByDni[a.dni] = {}; });
   for(let d=1; d<=nDays; d++){
     const dateStr = ym+'-'+String(d).padStart(2,'0');
     const counts = {PR:0,AI:0,DM:0,LSG:0,VA:0,BJ:0,TT:0};
@@ -951,6 +968,7 @@ async function renderTabDashboard(){
         const r = recs[dni];
         counts[r.status] = (counts[r.status]||0)+1;
         if(r.status==='PR' && r.turnoTarde) counts.TT++;
+        detailByDni[dni][dateStr] = r.status + (r.status==='PR' && r.turnoTarde ? ' (TT)' : '');
       });
     });
     perDay.push({dateStr, counts, any, sunday:isSunday(dateStr), holiday:HOLIDAYS_2026[dateStr]});
@@ -967,7 +985,7 @@ async function renderTabDashboard(){
     {key:'DM', label:'DESCANSO MÉDICO'},
     {key:'LSG', label:'LICENCIA SIN GOCE'},
   ];
-  LAST_DASHBOARD = { ym, perDay, metricRows };
+  LAST_DASHBOARD = { ym, perDay, metricRows, scope, detailByDni };
 
   main.innerHTML = `
     <div class="card">
