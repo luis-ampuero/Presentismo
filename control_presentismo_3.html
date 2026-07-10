@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Control de Presentismo</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --navy:#0f2a52;
+    --blue:#2563eb;
+    --blue-light:#eaf1fd;
+    --blue-mid:#3b82f6;
+    --bg:#f2f5fa;
+    --card:#ffffff;
+    --border:#dde5f0;
+    --text:#1c2b3d;
+    --muted:#6b7c93;
+    --radius:16px;
+    --radius-sm:10px;
+
+    --pr-bg:#dcf6e3; --pr-fg:#178a3e;
+    --ai-bg:#fddede; --ai-fg:#c0281f;
+    --va-bg:#ffe7c2; --va-fg:#b06a05;
+    --dm-bg:#e8def9; --dm-fg:#6d3ecb;
+    --lsg-bg:#e4e8ee; --lsg-fg:#556074;
+    --bj-bg:#dfe3ea; --bj-fg:#1c2b3d;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'Segoe UI',Inter,system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{min-height:100vh; display:flex; flex-direction:column;}
+  .topbar{
+    background:linear-gradient(135deg,var(--navy),#173963);
+    color:#fff; padding:16px 28px; display:flex; align-items:center; justify-content:space-between;
+    flex-wrap:wrap; gap:10px;
+  }
+  .topbar h1{font-size:18px; margin:0; font-weight:700; letter-spacing:.3px;}
+  .topbar .sub{font-size:12px; color:#b9cbe8; margin-top:2px;}
+  .topbar-right{display:flex; align-items:center; gap:14px; font-size:13px;}
+  .btn{
+    border:none; border-radius:999px; padding:9px 18px; font-size:13px; font-weight:600;
+    cursor:pointer; transition:.15s; display:inline-flex; align-items:center; gap:6px;
+  }
+  .btn-primary{background:var(--blue); color:#fff;}
+  .btn-primary:hover{background:#1d4ed8;}
+  .btn-outline{background:transparent; border:1.5px solid rgba(255,255,255,.5); color:#fff;}
+  .btn-outline:hover{background:rgba(255,255,255,.12);}
+  .btn-ghost{background:var(--blue-light); color:var(--blue);}
+  .btn-ghost:hover{background:#dbe8fd;}
+  .btn-danger{background:#fde4e4; color:#c0281f;}
+  .btn-sm{padding:6px 12px; font-size:12px; border-radius:8px;}
+  .layout{display:flex; flex:1; min-height:0;}
+  .sidebar{
+    width:210px; background:#fff; border-right:1px solid var(--border);
+    padding:18px 10px; display:flex; flex-direction:column; gap:4px;
+  }
+  .side-item{
+    padding:11px 14px; border-radius:var(--radius-sm); font-size:13.5px; font-weight:600;
+    color:var(--muted); cursor:pointer; display:flex; align-items:center; gap:9px;
+  }
+  .side-item:hover{background:var(--blue-light); color:var(--blue);}
+  .side-item.active{background:var(--blue); color:#fff;}
+  .main{flex:1; padding:26px 30px; overflow:auto;}
+  .center-screen{flex:1; display:flex; align-items:center; justify-content:center; padding:30px;}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+    padding:24px; box-shadow:0 1px 3px rgba(15,42,82,.05);
+  }
+  .card + .card{margin-top:18px;}
+  h2{font-size:19px; margin:0 0 4px 0;}
+  h3{font-size:15px; margin:0 0 12px 0; color:var(--navy);}
+  .muted{color:var(--muted); font-size:13px;}
+  label{font-size:12.5px; font-weight:600; color:var(--muted); display:block; margin-bottom:5px;}
+  input,select,textarea{
+    width:100%; padding:10px 12px; border:1.5px solid var(--border); border-radius:var(--radius-sm);
+    font-size:13.5px; background:#fbfcfe; color:var(--text); font-family:inherit;
+  }
+  input:focus,select:focus,textarea:focus{outline:none; border-color:var(--blue);}
+  .field{margin-bottom:14px;}
+  .row{display:flex; gap:14px; flex-wrap:wrap;}
+  .row > div{flex:1; min-width:160px;}
+  table{width:100%; border-collapse:collapse; font-size:12.8px;}
+  th{
+    background:var(--navy); color:#fff; padding:8px 9px; text-align:left; font-weight:600;
+    position:sticky; top:0; white-space:nowrap;
+  }
+  td{padding:7px 9px; border-bottom:1px solid var(--border); white-space:nowrap;}
+  tr:hover td{background:#f8fafd;}
+  .table-wrap{overflow:auto; border-radius:var(--radius-sm); border:1px solid var(--border); max-height:60vh;}
+  .badge{
+    padding:3px 10px; border-radius:999px; font-size:11.5px; font-weight:700; display:inline-block;
+  }
+  .badge.PR{background:var(--pr-bg); color:var(--pr-fg);}
+  .badge.AI{background:var(--ai-bg); color:var(--ai-fg);}
+  .badge.VA{background:var(--va-bg); color:var(--va-fg);}
+  .badge.DM{background:var(--dm-bg); color:var(--dm-fg);}
+  .badge.LSG{background:var(--lsg-bg); color:var(--lsg-fg);}
+  .badge.BJ{background:var(--bj-bg); color:var(--bj-fg);}
+  select.status-select.PR{background:var(--pr-bg); color:var(--pr-fg); font-weight:700; border-color:var(--pr-bg);}
+  select.status-select.AI{background:var(--ai-bg); color:var(--ai-fg); font-weight:700; border-color:var(--ai-bg);}
+  select.status-select.VA{background:var(--va-bg); color:var(--va-fg); font-weight:700; border-color:var(--va-bg);}
+  select.status-select.DM{background:var(--dm-bg); color:var(--dm-fg); font-weight:700; border-color:var(--dm-bg);}
+  select.status-select.LSG{background:var(--lsg-bg); color:var(--lsg-fg); font-weight:700; border-color:var(--lsg-bg);}
+  select.status-select.BJ{background:var(--bj-bg); color:var(--bj-fg); font-weight:700; border-color:var(--bj-bg);}
+  .login-box{width:380px; max-width:92vw;}
+  .role-pick{display:flex; gap:14px; margin-top:18px;}
+  .role-card{
+    flex:1; border:1.5px solid var(--border); border-radius:var(--radius); padding:20px 14px;
+    text-align:center; cursor:pointer; transition:.15s;
+  }
+  .role-card:hover{border-color:var(--blue); background:var(--blue-light);}
+  .role-card .icon{font-size:26px; margin-bottom:8px;}
+  .role-card .t{font-weight:700; font-size:14px;}
+  .role-card .d{font-size:11.5px; color:var(--muted); margin-top:3px;}
+  .stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:18px;}
+  .stat{background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px 16px;}
+  .stat .n{font-size:22px; font-weight:800; color:var(--navy);}
+  .stat .l{font-size:11.5px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.3px;}
+  .toolbar{display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:16px;}
+  .toolbar .field{margin-bottom:0; min-width:170px;}
+  .locked-banner{
+    background:#fff4e0; border:1px solid #f3d18e; color:#8a5a00; padding:14px 18px; border-radius:var(--radius-sm);
+    font-size:13px; margin-bottom:16px; display:flex; align-items:center; gap:10px;
+  }
+  .success-banner{
+    background:#dcf6e3; border:1px solid #a6e6bb; color:#178a3e; padding:14px 18px; border-radius:var(--radius-sm);
+    font-size:13px; margin-bottom:16px;
+  }
+  .modal-bg{
+    position:fixed; inset:0; background:rgba(15,42,82,.45); display:flex; align-items:center; justify-content:center;
+    z-index:50; padding:20px;
+  }
+  .modal{background:#fff; border-radius:var(--radius); padding:22px; width:420px; max-width:100%;}
+  .toast{
+    position:fixed; bottom:22px; right:22px; background:var(--navy); color:#fff; padding:12px 20px;
+    border-radius:10px; font-size:13px; z-index:100; box-shadow:0 6px 20px rgba(0,0,0,.2);
+  }
+  .link{color:var(--blue); cursor:pointer; font-weight:600; font-size:13px;}
+  .pill-tabs{display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap;}
+  .pill-tab{padding:7px 14px; border-radius:999px; background:var(--blue-light); color:var(--blue); font-size:12.5px; font-weight:600; cursor:pointer;}
+  .pill-tab.active{background:var(--blue); color:#fff;}
+  .day-off{color:#b6c1cf; font-style:italic;}
+  .icon-btn{background:none; border:none; cursor:pointer; font-size:14px; color:var(--muted);}
+  .icon-btn:hover{color:var(--blue);}
+  ::-webkit-scrollbar{width:9px; height:9px;}
+  ::-webkit-scrollbar-thumb{background:#c7d4e6; border-radius:10px;}
+  .empty{text-align:center; padding:40px 20px; color:var(--muted); font-size:13px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ---------------------------------------------------------------------------
+// CONSTANTS
+// ---------------------------------------------------------------------------
+const STATUS = {
+  PR:  {label:'Presente',            fg:'#178a3e'},
+  AI:  {label:'Ausente Injustificado', fg:'#c0281f'},
+  DM:  {label:'Descanso Médico',     fg:'#6d3ecb'},
+  LSG: {label:'Licencia Sin Goce',   fg:'#556074'},
+  VA:  {label:'Vacaciones',          fg:'#b06a05'},
+  BJ:  {label:'Baja',                fg:'#1c2b3d'},
+};
+const STATUS_ORDER = ['PR','AI','DM','LSG','VA','BJ'];
+const HOLIDAYS_2026 = {
+  '2026-01-01':'Año Nuevo','2026-04-03':'Viernes Santo','2026-05-01':'Día del Trabajo',
+  '2026-06-29':'San Pedro y San Pablo','2026-07-28':'Fiestas Patrias','2026-07-29':'Fiestas Patrias',
+  '2026-08-30':'Santa Rosa de Lima','2026-10-08':'Combate de Angamos','2026-11-01':'Todos los Santos',
+  '2026-12-08':'Inmaculada Concepción','2026-12-25':'Navidad'
+};
+
+let SESSION = null; // {role:'admin'|'lider', name}
+let CACHE = { advisors:null, lideres:null, coadmins:null, adminPass:null };
+
+// ---------------------------------------------------------------------------
+// STORAGE HELPERS — Backend: Google Sheets (vía Google Apps Script Web App)
+// ---------------------------------------------------------------------------
+// 1) Crea una Google Sheet nueva (no la compartas con tus líderes, es tu base de datos).
+// 2) Extensiones > Apps Script, pega el código que te dimos en el mensaje (Code.gs).
+// 3) Desplegar > Nueva implementación > Aplicación web > Ejecutar como "Yo" > Acceso "Cualquier usuario".
+// 4) Copia la URL que termina en /exec y pégala aquí abajo, entre las comillas:
+const API_URL = "https://script.google.com/a/macros/konecta.com/s/AKfycbww140zEtAlQ6gIGJNhl0lVEFPtE5Zu_A6QAywpoWE-E3_ee3gYEl9BUEVUuoFuf0Lqfg/exec";
+
+async function sGet(key){
+  try{
+    const res = await fetch(API_URL + '?action=get&key=' + encodeURIComponent(key));
+    const data = await res.json();
+    return data && data.value ? JSON.parse(data.value) : null;
+  }catch(e){ console.error('sGet failed', key, e); return null; }
+}
+async function sSet(key, value){
+  try{
+    await fetch(API_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'set', key, value: JSON.stringify(value) })
+    });
+    return true;
+  }catch(e){ console.error('sSet failed', key, e); return false; }
+}
+async function checkConnection(){
+  if(!API_URL || API_URL.indexOf('PEGA_AQUI')===0) return false;
+  try{
+    const res = await fetch(API_URL + '?action=get&key=__ping__');
+    return res.ok;
+  }catch(e){ return false; }
+}
+
+async function getAdvisors(){ if(!CACHE.advisors) CACHE.advisors = (await sGet('advisors')) || []; return CACHE.advisors; }
+async function saveAdvisors(list){ CACHE.advisors = list; await sSet('advisors', list); }
+
+async function getLideres(){ if(!CACHE.lideres) CACHE.lideres = (await sGet('lideres')) || []; return CACHE.lideres; }
+async function saveLideres(list){ CACHE.lideres = list; await sSet('lideres', list); }
+
+async function getCoadmins(){ if(!CACHE.coadmins) CACHE.coadmins = (await sGet('coadmins')) || []; return CACHE.coadmins; }
+async function saveCoadmins(list){ CACHE.coadmins = list; await sSet('coadmins', list); }
+
+async function getAdminPass(){ if(CACHE.adminPass===null) CACHE.adminPass = await sGet('admin_pass'); return CACHE.adminPass; }
+async function saveAdminPass(p){ CACHE.adminPass = p; await sSet('admin_pass', p); }
+
+async function getMonthData(ym){ return (await sGet('attendance:'+ym)) || {}; }
+async function saveMonthData(ym, data){ await sSet('attendance:'+ym, data); }
+
+async function getAudit(){ return (await sGet('audit_log')) || []; }
+async function pushAudit(entry){
+  const log = await getAudit();
+  log.unshift({ ts: new Date().toISOString(), ...entry });
+  await sSet('audit_log', log.slice(0,500));
+}
+
+// ---------------------------------------------------------------------------
+// UTIL
+// ---------------------------------------------------------------------------
+function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function ymOf(dateStr){ return dateStr.slice(0,7); }
+function fmtDate(dateStr){
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const dt = new Date(y,m-1,d);
+  return dt.toLocaleDateString('es-PE',{weekday:'short', day:'2-digit', month:'short'});
+}
+function isSunday(dateStr){ const [y,m,d]=dateStr.split('-').map(Number); return new Date(y,m-1,d).getDay()===0; }
+function daysInMonth(ym){ const [y,m]=ym.split('-').map(Number); return new Date(y,m,0).getDate(); }
+function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function toast(msg){
+  const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(),2600);
+}
+
+// ---------------------------------------------------------------------------
+// RENDER ROOT
+// ---------------------------------------------------------------------------
+const app = document.getElementById('app');
+function render(html){ app.innerHTML = html; }
+
+async function boot(){
+  const connected = await checkConnection();
+  if(!connected){ renderConnectionError(); return; }
+  const pass = await getAdminPass();
+  if(!pass){ renderSetup(); return; }
+  renderLoginChoice();
+}
+
+function renderConnectionError(){
+  render(`
+    <div class="center-screen">
+      <div class="card login-box" style="width:460px;">
+        <h2>⚠️ Falta conectar Google Sheets</h2>
+        <p class="muted">Este archivo aún no está conectado a tu Google Sheet. Abre el archivo HTML con un editor de texto, busca la constante <b>API_URL</b> cerca del inicio del &lt;script&gt;, y pega ahí la URL de tu Apps Script (termina en <code>/exec</code>). Guarda el archivo y vuelve a abrirlo.</p>
+        <p class="muted">Si aún no creaste el Apps Script, pide el código "Code.gs" y los pasos de conexión.</p>
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="boot()">Reintentar conexión</button>
+      </div>
+    </div>
+  `);
+}
+
+// ---------------------------------------------------------------------------
+// SETUP (first run)
+// ---------------------------------------------------------------------------
+function renderSetup(){
+  render(`
+    <div class="center-screen">
+      <div class="card login-box">
+        <h2>Bienvenido 👋</h2>
+        <p class="muted">Antes de empezar, crea tu contraseña de <b>Coordinador</b>. Con ella podrás administrar asesores, líderes y corregir registros.</p>
+        <div class="field"><label>Nueva contraseña</label><input id="p1" type="password" placeholder="Mínimo 4 caracteres"></div>
+        <div class="field"><label>Confirmar contraseña</label><input id="p2" type="password"></div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="submitSetup()">Crear acceso de Coordinador</button>
+      </div>
+    </div>
+  `);
+}
+async function submitSetup(){
+  const p1=document.getElementById('p1').value, p2=document.getElementById('p2').value;
+  if(p1.length<4){ toast('La contraseña debe tener al menos 4 caracteres'); return; }
+  if(p1!==p2){ toast('Las contraseñas no coinciden'); return; }
+  await saveAdminPass(p1);
+  toast('Acceso creado');
+  renderLoginChoice();
+}
+
+// ---------------------------------------------------------------------------
+// LOGIN
+// ---------------------------------------------------------------------------
+function renderLoginChoice(){
+  render(`
+    <div class="center-screen">
+      <div class="login-box">
+        <div style="text-align:center;margin-bottom:6px;">
+          <div style="font-size:34px;">📋</div>
+          <h2>Control de Presentismo</h2>
+          <p class="muted">Selecciona tu rol para continuar</p>
+        </div>
+        <div class="role-pick">
+          <div class="role-card" onclick="renderAdminLogin()">
+            <div class="icon">🔑</div>
+            <div class="t">Coordinador</div>
+            <div class="d">Administrar asesores, líderes, dashboard e historial</div>
+          </div>
+          <div class="role-card" onclick="renderLiderLogin()">
+            <div class="icon">🧑‍💼</div>
+            <div class="t">Líder</div>
+            <div class="d">Registrar la asistencia diaria de mi equipo</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+async function renderAdminLogin(){
+  const coadmins = await getCoadmins();
+  const opts = ['<option value="__main__">Coordinador Principal</option>']
+    .concat(coadmins.map(c=>`<option value="${escapeHtml(c.nombre)}">${escapeHtml(c.nombre)}</option>`)).join('');
+  render(`
+    <div class="center-screen">
+      <div class="card login-box">
+        <h2>Ingreso Coordinador</h2>
+        ${coadmins.length? `<div class="field"><label>Usuario</label><select id="who">${opts}</select></div>` : ''}
+        <div class="field"><label>Contraseña</label><input id="pass" type="password" onkeydown="if(event.key==='Enter')doAdminLogin()"></div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="doAdminLogin()">Ingresar</button>
+        <p class="link" style="margin-top:14px;text-align:center" onclick="renderLoginChoice()">← Volver</p>
+      </div>
+    </div>
+  `);
+}
+async function doAdminLogin(){
+  const whoEl = document.getElementById('who');
+  const who = whoEl ? whoEl.value : '__main__';
+  const pass = document.getElementById('pass').value;
+  if(who==='__main__'){
+    const real = await getAdminPass();
+    if(pass===real){ SESSION={role:'admin', name:'Coordinador Principal'}; renderAdminApp('registrar'); return; }
+  } else {
+    const coadmins = await getCoadmins();
+    const c = coadmins.find(x=>x.nombre===who);
+    if(c && c.pass===pass){ SESSION={role:'admin', name:c.nombre}; renderAdminApp('registrar'); return; }
+  }
+  toast('Contraseña incorrecta');
+}
+
+async function renderLiderLogin(){
+  const lideres = await getLideres();
+  if(lideres.length===0){
+    render(`
+      <div class="center-screen">
+        <div class="card login-box">
+          <h2>Aún no hay líderes registrados</h2>
+          <p class="muted">Pide al Coordinador que te agregue desde el panel de administración.</p>
+          <p class="link" onclick="renderLoginChoice()">← Volver</p>
+        </div>
+      </div>`);
+    return;
+  }
+  render(`
+    <div class="center-screen">
+      <div class="card login-box">
+        <h2>Ingreso Líder</h2>
+        <div class="field"><label>¿Quién va a registrar?</label>
+          <select id="liderSel">${lideres.map(l=>`<option value="${escapeHtml(l.nombre)}">${escapeHtml(l.nombre)}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>PIN</label><input id="pin" type="password" onkeydown="if(event.key==='Enter')doLiderLogin()"></div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="doLiderLogin()">Ingresar</button>
+        <p class="link" style="margin-top:14px;text-align:center" onclick="renderLoginChoice()">← Volver</p>
+      </div>
+    </div>
+  `);
+}
+async function doLiderLogin(){
+  const nombre = document.getElementById('liderSel').value;
+  const pin = document.getElementById('pin').value;
+  const lideres = await getLideres();
+  const l = lideres.find(x=>x.nombre===nombre);
+  if(l && String(l.pin)===String(pin)){ SESSION={role:'lider', name:nombre}; renderLiderApp(); return; }
+  toast('PIN incorrecto');
+}
+
+function logout(){ SESSION=null; renderLoginChoice(); }
+
+// ===========================================================================
+// LÍDER APP
+// ===========================================================================
+let LIDER_STATE = { date: todayStr(), records:{} };
+
+async function renderLiderApp(){
+  const date = LIDER_STATE.date;
+  const ym = ymOf(date);
+  const monthData = await getMonthData(ym);
+  const entry = monthData[date] && monthData[date][SESSION.name];
+
+  render(`
+    <div class="topbar">
+      <div><h1>Control de Presentismo</h1><div class="sub">Líder: ${escapeHtml(SESSION.name)}</div></div>
+      <div class="topbar-right">
+        <span>${escapeHtml(SESSION.name)}</span>
+        <button class="btn btn-outline btn-sm" onclick="logout()">Salir</button>
+      </div>
+    </div>
+    <div class="main" id="liderMain"></div>
+  `);
+  const main = document.getElementById('liderMain');
+
+  const advisors = (await getAdvisors()).filter(a=>a.lider===SESSION.name && a.estado==='ACTIVO');
+
+  let html = `
+    <div class="card">
+      <div class="toolbar">
+        <div class="field">
+          <label>Fecha a registrar</label>
+          <input type="date" id="liderDate" value="${date}" max="${todayStr()}" onchange="liderChangeDate(this.value)">
+        </div>
+        <div class="field" style="max-width:220px;">
+          <label>Día</label>
+          <input value="${fmtDate(date)}${HOLIDAYS_2026[date]? ' · Feriado: '+HOLIDAYS_2026[date] : ''}" disabled>
+        </div>
+        <div style="flex:1"></div>
+        <button class="btn btn-ghost btn-sm" onclick="renderLiderHistory()">Ver mi historial</button>
+      </div>
+  `;
+
+  if(advisors.length===0){
+    html += `<div class="empty">No tienes asesores activos asignados todavía. Pide al Coordinador que te asigne tu equipo.</div></div>`;
+    main.innerHTML = html; return;
+  }
+
+  if(entry && entry.locked){
+    html += `
+      <div class="locked-banner">🔒 Ya registraste la asistencia de este día (${fmtDate(date)}). Si necesitas corregir algo, contacta a Coordinación.</div>
+      <div class="table-wrap"><table><thead><tr><th>Asesor</th><th>DNI</th><th>Ciudad</th><th>Estado</th></tr></thead><tbody>
+      ${advisors.map(a=>{
+        const r = entry.records[a.dni];
+        const st = r? r.status:'PR';
+        return `<tr><td>${escapeHtml(a.nombre)}</td><td>${escapeHtml(a.dni)}</td><td>${escapeHtml(a.ciudad||'-')}</td>
+        <td><span class="badge ${st}">${st}${r&&r.turnoTarde?' · TT':''}</span></td></tr>`;
+      }).join('')}
+      </tbody></table></div>
+      <p class="muted" style="margin-top:10px;">Registrado por ${escapeHtml(entry.submittedBy)} el ${new Date(entry.submittedAt).toLocaleString('es-PE')}</p>
+    </div>`;
+    main.innerHTML = html; return;
+  }
+
+  html += `
+      <div class="table-wrap"><table><thead><tr><th>Asesor</th><th>DNI</th><th>Ciudad</th><th>Estado del día</th><th>Turno tarde</th></tr></thead><tbody>
+      ${advisors.map(a=>`
+        <tr>
+          <td>${escapeHtml(a.nombre)}</td>
+          <td>${escapeHtml(a.dni)}</td>
+          <td>${escapeHtml(a.ciudad||'-')}</td>
+          <td><select class="status-select PR" data-dni="${a.dni}" onchange="onStatusChange(this)">
+            ${STATUS_ORDER.map(s=>`<option value="${s}" ${s==='PR'?'selected':''}>${s} - ${STATUS[s].label}</option>`).join('')}
+          </select></td>
+          <td style="text-align:center"><input type="checkbox" id="tt-${a.dni}"></td>
+        </tr>`).join('')}
+      </tbody></table></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-primary" onclick="submitLiderAttendance()">Registrar asistencia del día</button>
+      </div>
+    </div>
+  `;
+  main.innerHTML = html;
+}
+
+function onStatusChange(sel){
+  sel.className = 'status-select ' + sel.value;
+  const tt = document.getElementById('tt-'+sel.dataset.dni);
+  if(sel.value!=='PR'){ tt.checked=false; tt.disabled=true; } else { tt.disabled=false; }
+}
+
+function liderChangeDate(v){ LIDER_STATE.date = v; renderLiderApp(); }
+
+async function submitLiderAttendance(){
+  const advisors = (await getAdvisors()).filter(a=>a.lider===SESSION.name && a.estado==='ACTIVO');
+  const records = {};
+  advisors.forEach(a=>{
+    const sel = document.querySelector(`select[data-dni="${a.dni}"]`);
+    const status = sel? sel.value : 'PR';
+    const tt = document.getElementById('tt-'+a.dni);
+    records[a.dni] = { status, turnoTarde: status==='PR' && tt ? tt.checked : false };
+  });
+  const date = LIDER_STATE.date, ym = ymOf(date);
+  const monthData = await getMonthData(ym);
+  if(!monthData[date]) monthData[date] = {};
+  monthData[date][SESSION.name] = {
+    records, submittedBy: SESSION.name, submittedAt: new Date().toISOString(), locked:true, edits:[]
+  };
+  await saveMonthData(ym, monthData);
+  await pushAudit({ user: SESSION.name, action:'Registro de asistencia', details:`${SESSION.name} registró la asistencia del ${date}` });
+  toast('Asistencia registrada');
+  renderLiderApp();
+}
+
+async function renderLiderHistory(){
+  const ym = ymOf(LIDER_STATE.date);
+  const monthData = await getMonthData(ym);
+  const dates = Object.keys(monthData).filter(d=>monthData[d][SESSION.name]).sort();
+  const main = document.getElementById('liderMain');
+  main.innerHTML = `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h3 style="margin:0;">Mi historial · ${ym}</h3>
+        <button class="btn btn-ghost btn-sm" onclick="renderLiderApp()">← Volver a registrar</button>
+      </div>
+      ${dates.length===0? '<div class="empty">Aún no has registrado asistencia este mes.</div>' : `
+      <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Presentes</th><th>Ausentes</th><th>Vacaciones</th><th>Bajas</th><th>Hora de registro</th></tr></thead><tbody>
+      ${dates.map(d=>{
+        const e = monthData[d][SESSION.name];
+        const vals = Object.values(e.records);
+        const c = code=>vals.filter(r=>r.status===code).length;
+        return `<tr><td>${fmtDate(d)}</td><td>${c('PR')}</td><td>${c('AI')+c('DM')+c('LSG')}</td><td>${c('VA')}</td><td>${c('BJ')}</td>
+        <td>${new Date(e.submittedAt).toLocaleString('es-PE')}</td></tr>`;
+      }).join('')}
+      </tbody></table></div>`}
+    </div>
+  `;
+}
+
+// ===========================================================================
+// ADMIN APP
+// ===========================================================================
+let ADMIN_TAB = 'registrar';
+let ADMIN_REG_STATE = { lider:'', date: todayStr() };
+let ADMIN_DASH_STATE = { ym: todayStr().slice(0,7), lider:'', ciudad:'' };
+let LAST_DASHBOARD = null;
+function exportDashboardExcel(){
+  if(!LAST_DASHBOARD){ toast('Primero abre el dashboard'); return; }
+  const { perDay, metricRows, ym } = LAST_DASHBOARD;
+  const header = ['Métrica', ...perDay.map(d=>d.dateStr)];
+  const rows = [header];
+  const dayVal = (d,key)=>{
+    if(d.sunday || !d.any) return '-';
+    if(key==='TOTAL_AUSENTES') return (d.counts.AI||0)+(d.counts.DM||0)+(d.counts.LSG||0);
+    if(key==='TOTAL') return (d.counts.PR||0)+(d.counts.AI||0)+(d.counts.DM||0)+(d.counts.LSG||0)+(d.counts.VA||0)+(d.counts.BJ||0);
+    if(key==='PCT') { const tot=(d.counts.PR||0)+(d.counts.AI||0)+(d.counts.DM||0)+(d.counts.LSG||0)+(d.counts.VA||0)+(d.counts.BJ||0);
+      const aus=(d.counts.AI||0)+(d.counts.DM||0)+(d.counts.LSG||0); return tot? ((aus/tot)*100).toFixed(1)+'%' : '-'; }
+    return d.counts[key]||0;
+  };
+  metricRows.forEach(m=> rows.push([m.label, ...perDay.map(d=>dayVal(d,m.key))]) );
+  rows.push(['TOTAL AUSENTES', ...perDay.map(d=>dayVal(d,'TOTAL_AUSENTES'))]);
+  rows.push(['VACACIONES', ...perDay.map(d=>dayVal(d,'VA'))]);
+  rows.push(['BAJAS', ...perDay.map(d=>dayVal(d,'BJ'))]);
+  rows.push(['TOTAL', ...perDay.map(d=>dayVal(d,'TOTAL'))]);
+  rows.push(['% AUSENTISMO', ...perDay.map(d=>dayVal(d,'PCT'))]);
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, ym);
+  XLSX.writeFile(wb, `dashboard_${ym}.xlsx`);
+}
+
+async function renderAdminApp(tab){
+  ADMIN_TAB = tab || ADMIN_TAB;
+  render(`
+    <div class="topbar">
+      <div><h1>Control de Presentismo</h1><div class="sub">Panel de Coordinación</div></div>
+      <div class="topbar-right"><span>${escapeHtml(SESSION.name)}</span><button class="btn btn-outline btn-sm" onclick="logout()">Salir</button></div>
+    </div>
+    <div class="layout">
+      <div class="sidebar">
+        ${sideItem('registrar','📝','Registrar')}
+        ${sideItem('asesores','👥','Asesores')}
+        ${sideItem('lideres','🧑‍💼','Líderes')}
+        ${sideItem('dashboard','📊','Dashboard')}
+        ${sideItem('coadmins','🔐','Accesos')}
+        ${sideItem('historial','🕓','Historial')}
+      </div>
+      <div class="main" id="adminMain"></div>
+    </div>
+  `);
+  const fn = {
+    registrar: renderTabRegistrar, asesores: renderTabAsesores, lideres: renderTabLideres,
+    dashboard: renderTabDashboard, coadmins: renderTabCoadmins, historial: renderTabHistorial
+  }[ADMIN_TAB];
+  await fn();
+}
+function sideItem(key,icon,label){
+  return `<div class="side-item ${ADMIN_TAB===key?'active':''}" onclick="renderAdminApp('${key}')"><span>${icon}</span>${label}</div>`;
+}
+
+// ---------- TAB: REGISTRAR (admin registra/edita en nombre de un líder) ----------
+async function renderTabRegistrar(){
+  const lideres = await getLideres();
+  const main = document.getElementById('adminMain');
+  if(!ADMIN_REG_STATE.lider && lideres.length) ADMIN_REG_STATE.lider = lideres[0].nombre;
+  const date = ADMIN_REG_STATE.date, ym = ymOf(date);
+  const monthData = await getMonthData(ym);
+  const entry = ADMIN_REG_STATE.lider && monthData[date] && monthData[date][ADMIN_REG_STATE.lider];
+  const advisors = (await getAdvisors()).filter(a=>a.lider===ADMIN_REG_STATE.lider && a.estado==='ACTIVO');
+
+  let html = `
+    <div class="card">
+      <h3>Registrar / corregir asistencia</h3>
+      <div class="toolbar">
+        <div class="field"><label>Líder</label>
+          <select onchange="ADMIN_REG_STATE.lider=this.value; renderTabRegistrar()">
+            ${lideres.map(l=>`<option value="${escapeHtml(l.nombre)}" ${l.nombre===ADMIN_REG_STATE.lider?'selected':''}>${escapeHtml(l.nombre)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Fecha</label>
+          <input type="date" value="${date}" max="${todayStr()}" onchange="ADMIN_REG_STATE.date=this.value; renderTabRegistrar()">
+        </div>
+      </div>
+  `;
+  if(!ADMIN_REG_STATE.lider || advisors.length===0){
+    html += `<div class="empty">Este líder no tiene asesores activos asignados.</div></div>`;
+    main.innerHTML = html; return;
+  }
+  if(entry && entry.locked){
+    html += `<div class="locked-banner">🔒 Ya fue registrado por ${escapeHtml(entry.submittedBy)}. Como Coordinador puedes corregirlo; quedará un registro en el historial.</div>`;
+  }
+  html += `
+      <div class="table-wrap"><table><thead><tr><th>Asesor</th><th>DNI</th><th>Ciudad</th><th>Estado del día</th><th>Turno tarde</th></tr></thead><tbody>
+      ${advisors.map(a=>{
+        const r = entry? entry.records[a.dni] : null;
+        const st = r? r.status : 'PR';
+        return `<tr>
+          <td>${escapeHtml(a.nombre)}</td><td>${escapeHtml(a.dni)}</td><td>${escapeHtml(a.ciudad||'-')}</td>
+          <td><select class="status-select ${st}" data-dni="${a.dni}" onchange="onStatusChange(this)">
+            ${STATUS_ORDER.map(s=>`<option value="${s}" ${s===st?'selected':''}>${s} - ${STATUS[s].label}</option>`).join('')}
+          </select></td>
+          <td style="text-align:center"><input type="checkbox" id="tt-${a.dni}" ${r&&r.turnoTarde?'checked':''} ${st!=='PR'?'disabled':''}></td>
+        </tr>`;
+      }).join('')}
+      </tbody></table></div>
+      ${entry && entry.locked? `
+      <div class="field" style="margin-top:14px;"><label>Motivo de la corrección (quedará en el historial)</label>
+      <input id="editNote" placeholder="Ej: el líder reportó un dato incorrecto"></div>` : ''}
+      <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-primary" onclick="submitAdminAttendance(${entry&&entry.locked?'true':'false'})">${entry&&entry.locked?'Guardar corrección':'Registrar asistencia'}</button>
+      </div>
+    </div>
+  `;
+  main.innerHTML = html;
+}
+async function submitAdminAttendance(isEdit){
+  const lider = ADMIN_REG_STATE.lider, date = ADMIN_REG_STATE.date, ym = ymOf(date);
+  const advisors = (await getAdvisors()).filter(a=>a.lider===lider && a.estado==='ACTIVO');
+  const records = {};
+  advisors.forEach(a=>{
+    const sel = document.querySelector(`select[data-dni="${a.dni}"]`);
+    const status = sel? sel.value : 'PR';
+    const tt = document.getElementById('tt-'+a.dni);
+    records[a.dni] = { status, turnoTarde: status==='PR' && tt ? tt.checked : false };
+  });
+  const monthData = await getMonthData(ym);
+  if(!monthData[date]) monthData[date] = {};
+  const prevEntry = monthData[date][lider];
+  const note = document.getElementById('editNote');
+  const edits = (prevEntry && prevEntry.edits) ? prevEntry.edits.slice() : [];
+  if(isEdit){ edits.push({ ts:new Date().toISOString(), user:SESSION.name, note: note? note.value : '' }); }
+  monthData[date][lider] = {
+    records, submittedBy: prevEntry? prevEntry.submittedBy : SESSION.name,
+    submittedAt: prevEntry? prevEntry.submittedAt : new Date().toISOString(),
+    locked:true, edits,
+    lastEditedBy: isEdit? SESSION.name : undefined, lastEditedAt: isEdit? new Date().toISOString(): undefined
+  };
+  await saveMonthData(ym, monthData);
+  await pushAudit({ user:SESSION.name, action: isEdit? 'Corrección de asistencia':'Registro de asistencia (por coordinador)',
+    details:`${SESSION.name} ${isEdit?'corrigió':'registró'} la asistencia de ${lider} del ${date}${isEdit && note && note.value? ' — Motivo: '+note.value : ''}` });
+  toast(isEdit? 'Corrección guardada' : 'Asistencia registrada');
+  renderTabRegistrar();
+}
+
+// ---------- TAB: ASESORES ----------
+let ASESORES_FILTER = '';
+async function renderTabAsesores(){
+  const advisors = await getAdvisors();
+  const lideres = await getLideres();
+  const main = document.getElementById('adminMain');
+  const filtered = advisors.filter(a =>
+    !ASESORES_FILTER || (a.nombre+a.dni+a.lider+a.ciudad).toLowerCase().includes(ASESORES_FILTER.toLowerCase()));
+  main.innerHTML = `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <h3 style="margin:0;">Asesores (${advisors.length})</h3>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="exportAdvisorsExcel()">⬇ Descargar Excel</button>
+          <button class="btn btn-ghost btn-sm" onclick="openImportModal()">Cargar dotación</button>
+          <button class="btn btn-primary btn-sm" onclick="openAdvisorModal()">+ Nuevo asesor</button>
+        </div>
+      </div>
+      <div class="field" style="max-width:320px;margin-top:12px;">
+        <input placeholder="Buscar por nombre, DNI, líder o ciudad" oninput="ASESORES_FILTER=this.value; renderTabAsesores()" value="${escapeHtml(ASESORES_FILTER)}">
+      </div>
+      <div class="table-wrap" style="margin-top:14px;">
+        <table><thead><tr><th>DNI</th><th>Nombre</th><th>Líder</th><th>Estado</th><th>Cuartil</th><th>Modalidad</th><th>Correo</th><th>Ciudad</th><th></th></tr></thead>
+        <tbody>
+        ${filtered.map(a=>`
+          <tr>
+            <td>${escapeHtml(a.dni)}</td><td>${escapeHtml(a.nombre)}</td><td>${escapeHtml(a.lider)}</td>
+            <td>${a.estado==='ACTIVO'?'<span class="badge PR">ACTIVO</span>':'<span class="badge BJ">INACTIVO</span>'}</td>
+            <td>${escapeHtml(a.cuartil||'-')}</td><td>${escapeHtml(a.modalidad||'-')}</td>
+            <td>${escapeHtml(a.correo||'-')}</td><td>${escapeHtml(a.ciudad||'-')}</td>
+            <td><button class="icon-btn" onclick='openAdvisorModal(${JSON.stringify(a.dni)})'>✏️</button>
+                <button class="icon-btn" onclick='deleteAdvisor(${JSON.stringify(a.dni)})'>🗑️</button></td>
+          </tr>`).join('') || `<tr><td colspan="9" class="empty">Sin resultados</td></tr>`}
+        </tbody></table>
+      </div>
+    </div>
+  `;
+}
+async function openAdvisorModal(dni){
+  const advisors = await getAdvisors();
+  const lideres = await getLideres();
+  const a = dni? advisors.find(x=>x.dni===dni) : {dni:'',nombre:'',lider:lideres[0]?.nombre||'',estado:'ACTIVO',cuartil:'',modalidad:'PRESENCIAL',correo:'',ciudad:''};
+  const bg = document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>${dni? 'Editar asesor':'Nuevo asesor'}</h3>
+      <div class="row"><div class="field"><label>DNI</label><input id="m_dni" value="${escapeHtml(a.dni)}" ${dni?'disabled':''}></div>
+      <div class="field"><label>Nombre y Apellidos</label><input id="m_nombre" value="${escapeHtml(a.nombre)}"></div></div>
+      <div class="row">
+        <div class="field"><label>Líder</label><select id="m_lider">${lideres.map(l=>`<option value="${escapeHtml(l.nombre)}" ${l.nombre===a.lider?'selected':''}>${escapeHtml(l.nombre)}</option>`).join('')}</select></div>
+        <div class="field"><label>Estado</label><select id="m_estado"><option ${a.estado==='ACTIVO'?'selected':''}>ACTIVO</option><option ${a.estado==='INACTIVO'?'selected':''}>INACTIVO</option></select></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Cuartil</label><input id="m_cuartil" value="${escapeHtml(a.cuartil)}" placeholder="Q1"></div>
+        <div class="field"><label>Modalidad</label><select id="m_modalidad"><option ${a.modalidad==='PRESENCIAL'?'selected':''}>PRESENCIAL</option><option ${a.modalidad==='REMOTO'?'selected':''}>REMOTO</option></select></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Correo</label><input id="m_correo" value="${escapeHtml(a.correo)}"></div>
+        <div class="field"><label>Ciudad</label><input id="m_ciudad" value="${escapeHtml(a.ciudad)}" placeholder="Lima, Trujillo, Arequipa..."></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
+        <button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveAdvisorModal(${dni? JSON.stringify(dni):'null'})">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+}
+async function saveAdvisorModal(originalDni){
+  const advisors = await getAdvisors();
+  const data = {
+    dni: document.getElementById('m_dni').value.trim(),
+    nombre: document.getElementById('m_nombre').value.trim(),
+    lider: document.getElementById('m_lider').value,
+    estado: document.getElementById('m_estado').value,
+    cuartil: document.getElementById('m_cuartil').value.trim(),
+    modalidad: document.getElementById('m_modalidad').value,
+    correo: document.getElementById('m_correo').value.trim(),
+    ciudad: document.getElementById('m_ciudad').value.trim(),
+  };
+  if(!data.dni || !data.nombre){ toast('DNI y Nombre son obligatorios'); return; }
+  if(originalDni){
+    const idx = advisors.findIndex(a=>a.dni===originalDni);
+    advisors[idx] = data;
+  } else {
+    if(advisors.some(a=>a.dni===data.dni)){ toast('Ya existe un asesor con ese DNI'); return; }
+    advisors.push(data);
+  }
+  await saveAdvisors(advisors);
+  await pushAudit({ user:SESSION.name, action: originalDni? 'Edición de asesor':'Alta de asesor', details:`${data.nombre} (${data.dni})` });
+  document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
+  toast('Guardado'); renderTabAsesores();
+}
+async function deleteAdvisor(dni){
+  if(!confirm('¿Eliminar este asesor? Esta acción no se puede deshacer.')) return;
+  let advisors = await getAdvisors();
+  const a = advisors.find(x=>x.dni===dni);
+  advisors = advisors.filter(x=>x.dni!==dni);
+  await saveAdvisors(advisors);
+  await pushAudit({ user:SESSION.name, action:'Eliminación de asesor', details:`${a?.nombre||''} (${dni})` });
+  toast('Asesor eliminado'); renderTabAsesores();
+}
+function openImportModal(){
+  const bg = document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML = `
+    <div class="modal" style="width:560px;">
+      <h3>Cargar dotación (asesor + líder)</h3>
+      <p class="muted">Sube tu archivo de dotación (.xlsx o .csv) con columnas en este orden: <b>DNI, Nombre, Líder, Estado, Cuartil, Modalidad, Correo, Ciudad</b>. Así no tienes que registrar asesor por asesor.</p>
+      <div class="field"><label>Archivo Excel o CSV</label><input type="file" id="fileBox" accept=".xlsx,.xls,.csv"></div>
+      <p class="muted" style="margin:8px 0;">— o pega las filas manualmente —</p>
+      <textarea id="csvBox" rows="5" placeholder="48853044,CANGO SANCHEZ ELIZABETH,BRACO SANTISTEBAN,ACTIVO,Q1,PRESENCIAL,u48853044@konecta.com,Lima"></textarea>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+        <button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">Cancelar</button>
+        <button class="btn btn-primary" onclick="doImport()">Cargar dotación</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+}
+function rowsToAdvisorRecords(rows){
+  // rows: array of arrays (first row may or may not be a header)
+  const out = [];
+  rows.forEach(r=>{
+    if(!r || !r[0]) return;
+    const dni = String(r[0]).trim();
+    if(dni.toLowerCase()==='dni') return; // skip header row
+    out.push({
+      dni, nombre: String(r[1]||'').trim(), lider: String(r[2]||'').trim(),
+      estado: String(r[3]||'ACTIVO').trim().toUpperCase()||'ACTIVO',
+      cuartil: String(r[4]||'').trim(), modalidad: String(r[5]||'PRESENCIAL').trim().toUpperCase()||'PRESENCIAL',
+      correo: String(r[6]||'').trim(), ciudad: String(r[7]||'').trim()
+    });
+  });
+  return out;
+}
+async function applyImportedRecords(records){
+  const advisors = await getAdvisors();
+  const lideres = await getLideres();
+  const liderNames = new Set(lideres.map(l=>l.nombre));
+  let added=0, updated=0;
+  records.forEach(rec=>{
+    if(!rec.dni || !rec.nombre) return;
+    if(rec.lider && !liderNames.has(rec.lider)){ lideres.push({nombre:rec.lider, pin:'1234'}); liderNames.add(rec.lider); }
+    const idx = advisors.findIndex(a=>a.dni===rec.dni);
+    if(idx>=0){ advisors[idx]=rec; updated++; } else { advisors.push(rec); added++; }
+  });
+  await saveAdvisors(advisors);
+  await saveLideres(lideres);
+  await pushAudit({ user:SESSION.name, action:'Carga de dotación', details:`${added} nuevos, ${updated} actualizados` });
+  document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
+  toast(`Cargado: ${added} nuevos, ${updated} actualizados`);
+  renderTabAsesores();
+}
+async function doImport(){
+  const fileInput = document.getElementById('fileBox');
+  if(fileInput.files && fileInput.files[0]){
+    const file = fileInput.files[0];
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:'array'});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1});
+    await applyImportedRecords(rowsToAdvisorRecords(rows));
+    return;
+  }
+  const raw = document.getElementById('csvBox').value.trim();
+  if(!raw){ toast('Sube un archivo o pega las filas'); return; }
+  const rows = raw.split('\n').map(line=>line.split(',').map(s=>s.trim()));
+  await applyImportedRecords(rowsToAdvisorRecords(rows));
+}
+async function exportAdvisorsExcel(){
+  const advisors = await getAdvisors();
+  const rows = [['DNI','Nombre','Líder','Estado','Cuartil','Modalidad','Correo','Ciudad']];
+  advisors.forEach(a=>rows.push([a.dni,a.nombre,a.lider,a.estado,a.cuartil,a.modalidad,a.correo,a.ciudad]));
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Asesores');
+  XLSX.writeFile(wb, 'dotacion_asesores.xlsx');
+}
+
+// ---------- TAB: LÍDERES ----------
+async function renderTabLideres(){
+  const lideres = await getLideres();
+  const advisors = await getAdvisors();
+  const main = document.getElementById('adminMain');
+  main.innerHTML = `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="margin:0;">Líderes (${lideres.length})</h3>
+        <button class="btn btn-primary btn-sm" onclick="openLiderModal()">+ Nuevo líder</button>
+      </div>
+      <div class="table-wrap" style="margin-top:14px;">
+        <table><thead><tr><th>Nombre</th><th>PIN</th><th>Asesores a cargo</th><th></th></tr></thead>
+        <tbody>
+        ${lideres.map(l=>`
+          <tr><td>${escapeHtml(l.nombre)}</td><td>••••</td>
+          <td>${advisors.filter(a=>a.lider===l.nombre && a.estado==='ACTIVO').length}</td>
+          <td><button class="icon-btn" onclick='openLiderModal(${JSON.stringify(l.nombre)})'>✏️</button>
+              <button class="icon-btn" onclick='deleteLider(${JSON.stringify(l.nombre)})'>🗑️</button></td></tr>`).join('') || `<tr><td colspan="4" class="empty">Aún no hay líderes</td></tr>`}
+        </tbody></table>
+      </div>
+    </div>
+  `;
+}
+async function openLiderModal(original){
+  const lideres = await getLideres();
+  const l = original? lideres.find(x=>x.nombre===original) : {nombre:'',pin:'1234'};
+  const bg = document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>${original? 'Editar líder':'Nuevo líder'}</h3>
+      <div class="field"><label>Nombre completo</label><input id="l_nombre" value="${escapeHtml(l.nombre)}" ${original?'disabled':''}></div>
+      <div class="field"><label>PIN de acceso</label><input id="l_pin" value="${escapeHtml(l.pin)}"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveLiderModal(${original? JSON.stringify(original):'null'})">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+}
+async function saveLiderModal(original){
+  const lideres = await getLideres();
+  const nombre = document.getElementById('l_nombre').value.trim();
+  const pin = document.getElementById('l_pin').value.trim();
+  if(!nombre || !pin){ toast('Completa nombre y PIN'); return; }
+  if(original){ const idx=lideres.findIndex(x=>x.nombre===original); lideres[idx]={nombre,pin}; }
+  else { if(lideres.some(x=>x.nombre===nombre)){ toast('Ya existe ese líder'); return; } lideres.push({nombre,pin}); }
+  await saveLideres(lideres);
+  await pushAudit({ user:SESSION.name, action: original? 'Edición de líder':'Alta de líder', details: nombre });
+  document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
+  toast('Guardado'); renderTabLideres();
+}
+async function deleteLider(nombre){
+  if(!confirm(`¿Eliminar al líder ${nombre}? Sus asesores quedarán sin líder asignado.`)) return;
+  let lideres = await getLideres();
+  lideres = lideres.filter(x=>x.nombre!==nombre);
+  await saveLideres(lideres);
+  await pushAudit({ user:SESSION.name, action:'Eliminación de líder', details: nombre });
+  toast('Líder eliminado'); renderTabLideres();
+}
+
+// ---------- TAB: DASHBOARD ----------
+async function renderTabDashboard(){
+  const advisors = await getAdvisors();
+  const lideres = await getLideres();
+  const ciudades = [...new Set(advisors.map(a=>a.ciudad).filter(Boolean))];
+  const main = document.getElementById('adminMain');
+
+  const scope = advisors.filter(a=>a.estado==='ACTIVO'
+    && (!ADMIN_DASH_STATE.lider || a.lider===ADMIN_DASH_STATE.lider)
+    && (!ADMIN_DASH_STATE.ciudad || a.ciudad===ADMIN_DASH_STATE.ciudad));
+
+  const ym = ADMIN_DASH_STATE.ym;
+  const monthData = await getMonthData(ym);
+  const nDays = daysInMonth(ym);
+  const dniSet = new Set(scope.map(a=>a.dni));
+
+  const perDay = [];
+  for(let d=1; d<=nDays; d++){
+    const dateStr = ym+'-'+String(d).padStart(2,'0');
+    const counts = {PR:0,AI:0,DM:0,LSG:0,VA:0,BJ:0,TT:0};
+    let any=false;
+    const dayEntries = monthData[dateStr] || {};
+    Object.keys(dayEntries).forEach(liderName=>{
+      if(ADMIN_DASH_STATE.lider && liderName!==ADMIN_DASH_STATE.lider) return;
+      const recs = dayEntries[liderName].records || {};
+      Object.keys(recs).forEach(dni=>{
+        if(!dniSet.has(dni)) return;
+        any=true;
+        const r = recs[dni];
+        counts[r.status] = (counts[r.status]||0)+1;
+        if(r.status==='PR' && r.turnoTarde) counts.TT++;
+      });
+    });
+    perDay.push({dateStr, counts, any, sunday:isSunday(dateStr), holiday:HOLIDAYS_2026[dateStr]});
+  }
+
+  const monthTotals = {PR:0,AI:0,DM:0,LSG:0,VA:0,BJ:0,TT:0};
+  perDay.forEach(d=>Object.keys(monthTotals).forEach(k=>monthTotals[k]+=d.counts[k]||0));
+  const totalAusentesMonth = monthTotals.AI+monthTotals.DM+monthTotals.LSG;
+
+  const metricRows = [
+    {key:'PR', label:'PRESENTES'},
+    {key:'TT', label:'TURNO TARDE'},
+    {key:'AI', label:'AUSENTE INJUSTIFICADO'},
+    {key:'DM', label:'DESCANSO MÉDICO'},
+    {key:'LSG', label:'LICENCIA SIN GOCE'},
+  ];
+  LAST_DASHBOARD = { ym, perDay, metricRows };
+
+  main.innerHTML = `
+    <div class="card">
+      <div class="toolbar">
+        <div class="field"><label>Mes</label><input type="month" value="${ym}" onchange="ADMIN_DASH_STATE.ym=this.value; renderTabDashboard()"></div>
+        <div class="field"><label>Líder</label><select onchange="ADMIN_DASH_STATE.lider=this.value; renderTabDashboard()">
+          <option value="">Todos</option>${lideres.map(l=>`<option value="${escapeHtml(l.nombre)}" ${l.nombre===ADMIN_DASH_STATE.lider?'selected':''}>${escapeHtml(l.nombre)}</option>`).join('')}
+        </select></div>
+        <div class="field"><label>Ciudad</label><select onchange="ADMIN_DASH_STATE.ciudad=this.value; renderTabDashboard()">
+          <option value="">Todas</option>${ciudades.map(c=>`<option value="${escapeHtml(c)}" ${c===ADMIN_DASH_STATE.ciudad?'selected':''}>${escapeHtml(c)}</option>`).join('')}
+        </select></div>
+        <div><button class="btn btn-ghost" onclick="exportDashboardExcel()">⬇ Descargar Excel</button></div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat"><div class="n">${scope.length}</div><div class="l">Asesores en alcance</div></div>
+        <div class="stat"><div class="n">${monthTotals.PR}</div><div class="l">Presentes (mes)</div></div>
+        <div class="stat"><div class="n">${totalAusentesMonth}</div><div class="l">Total ausentes (mes)</div></div>
+        <div class="stat"><div class="n">${monthTotals.VA}</div><div class="l">Vacaciones (mes)</div></div>
+      </div>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th style="position:sticky;left:0;background:var(--navy);">Métrica</th>
+          ${perDay.map(d=>`<th>${d.dateStr.slice(8)}-${['dom','lun','mar','mié','jue','vie','sáb'][new Date(d.dateStr+'T00:00:00').getDay()]}${d.holiday?' 🎌':''}</th>`).join('')}
+        </tr></thead>
+        <tbody>
+        ${metricRows.map(m=>`
+          <tr><td style="position:sticky;left:0;background:#fff;font-weight:700;">${m.label}</td>
+          ${perDay.map(d=> d.sunday? `<td class="day-off">-</td>` : `<td>${d.any? (d.counts[m.key]||0) : '<span class="day-off">-</span>'}</td>`).join('')}
+          </tr>`).join('')}
+        <tr><td style="position:sticky;left:0;background:#fde4e4;font-weight:800;">TOTAL AUSENTES</td>
+          ${perDay.map(d=>{ if(d.sunday) return `<td class="day-off">-</td>`; if(!d.any) return `<td class="day-off">-</td>`;
+            const t=(d.counts.AI||0)+(d.counts.DM||0)+(d.counts.LSG||0); return `<td style="font-weight:700;">${t}</td>`; }).join('')}
+        </tr>
+        <tr><td style="position:sticky;left:0;background:#fff;font-weight:700;">VACACIONES</td>
+          ${perDay.map(d=> d.sunday||!d.any? `<td class="day-off">-</td>` : `<td>${d.counts.VA||0}</td>`).join('')}</tr>
+        <tr><td style="position:sticky;left:0;background:#fff;font-weight:700;">BAJAS</td>
+          ${perDay.map(d=> d.sunday||!d.any? `<td class="day-off">-</td>` : `<td>${d.counts.BJ||0}</td>`).join('')}</tr>
+        <tr><td style="position:sticky;left:0;background:#eaf1fd;font-weight:800;">TOTAL</td>
+          ${perDay.map(d=>{ if(d.sunday||!d.any) return `<td class="day-off">-</td>`;
+            const t=(d.counts.PR||0)+(d.counts.AI||0)+(d.counts.DM||0)+(d.counts.LSG||0)+(d.counts.VA||0)+(d.counts.BJ||0);
+            return `<td style="font-weight:700;">${t}</td>`; }).join('')}
+        </tr>
+        <tr><td style="position:sticky;left:0;background:#fff4e0;font-weight:800;">% AUSENTISMO</td>
+          ${perDay.map(d=>{ if(d.sunday||!d.any) return `<td class="day-off">-</td>`;
+            const tot=(d.counts.PR||0)+(d.counts.AI||0)+(d.counts.DM||0)+(d.counts.LSG||0)+(d.counts.VA||0)+(d.counts.BJ||0);
+            const aus=(d.counts.AI||0)+(d.counts.DM||0)+(d.counts.LSG||0);
+            return `<td style="font-weight:700;">${tot? ((aus/tot)*100).toFixed(1)+'%':'-'}</td>`; }).join('')}
+        </tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="muted" style="margin-top:10px;">🎌 = feriado nacional (Perú). Domingos se muestran sin datos por defecto.</p>
+    </div>
+  `;
+}
+
+// ---------- TAB: COADMINS (accesos adicionales) ----------
+async function renderTabCoadmins(){
+  const coadmins = await getCoadmins();
+  const main = document.getElementById('adminMain');
+  main.innerHTML = `
+    <div class="card">
+      <h3>Accesos de Coordinación</h3>
+      <p class="muted">Aquí puedes dar acceso de administrador a otras personas de confianza, además de tu contraseña principal.</p>
+      <div class="row" style="margin-top:8px;">
+        <div class="field"><label>Cambiar mi contraseña principal</label><input id="newMainPass" type="password" placeholder="Nueva contraseña"></div>
+        <div style="align-self:flex-end;"><button class="btn btn-ghost" onclick="changeMainPass()">Actualizar</button></div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="margin:0;">Coordinadores adicionales (${coadmins.length})</h3>
+        <button class="btn btn-primary btn-sm" onclick="openCoadminModal()">+ Nuevo acceso</button>
+      </div>
+      <div class="table-wrap" style="margin-top:14px;">
+        <table><thead><tr><th>Nombre</th><th>Contraseña</th><th></th></tr></thead>
+        <tbody>${coadmins.map(c=>`<tr><td>${escapeHtml(c.nombre)}</td><td>••••••</td>
+          <td><button class="icon-btn" onclick='deleteCoadmin(${JSON.stringify(c.nombre)})'>🗑️</button></td></tr>`).join('') || `<tr><td colspan="3" class="empty">Solo tú tienes acceso por ahora</td></tr>`}</tbody></table>
+      </div>
+    </div>
+  `;
+}
+async function changeMainPass(){
+  const v = document.getElementById('newMainPass').value;
+  if(v.length<4){ toast('Mínimo 4 caracteres'); return; }
+  await saveAdminPass(v);
+  await pushAudit({ user:SESSION.name, action:'Cambio de contraseña principal', details:'' });
+  toast('Contraseña actualizada'); document.getElementById('newMainPass').value='';
+}
+function openCoadminModal(){
+  const bg = document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>Nuevo acceso de Coordinador</h3>
+      <div class="field"><label>Nombre</label><input id="ca_nombre"></div>
+      <div class="field"><label>Contraseña</label><input id="ca_pass" type="password"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveCoadmin()">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+}
+async function saveCoadmin(){
+  const nombre = document.getElementById('ca_nombre').value.trim();
+  const pass = document.getElementById('ca_pass').value;
+  if(!nombre||pass.length<4){ toast('Completa nombre y contraseña (mín. 4 caracteres)'); return; }
+  const coadmins = await getCoadmins();
+  coadmins.push({nombre, pass});
+  await saveCoadmins(coadmins);
+  await pushAudit({ user:SESSION.name, action:'Nuevo acceso de coordinador', details:nombre });
+  document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
+  toast('Acceso creado'); renderTabCoadmins();
+}
+async function deleteCoadmin(nombre){
+  if(!confirm(`¿Quitar el acceso de ${nombre}?`)) return;
+  let coadmins = await getCoadmins();
+  coadmins = coadmins.filter(c=>c.nombre!==nombre);
+  await saveCoadmins(coadmins);
+  await pushAudit({ user:SESSION.name, action:'Acceso de coordinador eliminado', details:nombre });
+  toast('Acceso eliminado'); renderTabCoadmins();
+}
+
+// ---------- TAB: HISTORIAL (auditoría) ----------
+async function renderTabHistorial(){
+  const log = await getAudit();
+  const main = document.getElementById('adminMain');
+  main.innerHTML = `
+    <div class="card">
+      <h3>Historial de cambios</h3>
+      <p class="muted">Registro de todas las acciones realizadas en el sistema: altas, ediciones, correcciones de asistencia, etc.</p>
+      <div class="table-wrap" style="margin-top:14px;">
+        <table><thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>
+        <tbody>${log.map(e=>`<tr><td>${new Date(e.ts).toLocaleString('es-PE')}</td><td>${escapeHtml(e.user)}</td><td>${escapeHtml(e.action)}</td><td>${escapeHtml(e.details||'')}</td></tr>`).join('') || `<tr><td colspan="4" class="empty">Sin actividad registrada aún</td></tr>`}</tbody></table>
+      </div>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+boot();
+</script>
+</body>
+</html>
