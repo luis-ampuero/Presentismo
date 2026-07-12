@@ -243,6 +243,27 @@ function fmtDate(dateStr){
 }
 function isSunday(dateStr){ const [y,m,d]=dateStr.split('-').map(Number); return new Date(y,m-1,d).getDay()===0; }
 function daysInMonth(ym){ const [y,m]=ym.split('-').map(Number); return new Date(y,m,0).getDate(); }
+const SUBMIT_CUTOFF_HOUR = 9; // hora límite para considerar el registro "a tiempo"
+function puntualidadBadge(iso){
+  if(!iso) return '';
+  const h = new Date(iso).getHours() + new Date(iso).getMinutes()/60;
+  return h <= SUBMIT_CUTOFF_HOUR
+    ? `<span class="badge PR">✔ A tiempo</span>`
+    : `<span class="badge AI">⏱ Fuera de horario</span>`;
+}
+function diffRecords(oldRecords, newRecords, advisors){
+  const changes = [];
+  const nameOf = dni => (advisors.find(a=>a.dni===dni)||{}).nombre || dni;
+  const allDnis = new Set([...Object.keys(oldRecords||{}), ...Object.keys(newRecords||{})]);
+  allDnis.forEach(dni=>{
+    const before = (oldRecords||{})[dni] || {};
+    const after = (newRecords||{})[dni] || {};
+    const bStr = `${before.status||'-'}${before.tardanza?' (Tardanza '+ (before.horaLlegada||'') +')':''}${before.turnoTarde?' (TT)':''}`;
+    const aStr = `${after.status||'-'}${after.tardanza?' (Tardanza '+ (after.horaLlegada||'') +')':''}${after.turnoTarde?' (TT)':''}`;
+    if(bStr !== aStr){ changes.push({ dni, nombre: nameOf(dni), from: bStr, to: aStr }); }
+  });
+  return changes;
+}
 function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function toast(msg){
@@ -449,21 +470,23 @@ async function renderLiderApp(){
   if(entry && entry.locked){
     html += `
       <div class="locked-banner">🔒 Ya registraste la asistencia de este día (${fmtDate(date)}). Si necesitas corregir algo, contacta a Coordinación.</div>
-      <div class="table-wrap"><table><thead><tr><th>Asesor</th><th>DNI</th><th>Ciudad</th><th>Estado</th></tr></thead><tbody>
+      <p class="muted">Registrado el ${new Date(entry.submittedAt).toLocaleString('es-PE')} ${puntualidadBadge(entry.submittedAt)}</p>
+      <div class="table-wrap"><table><thead><tr><th>Asesor</th><th>DNI</th><th>Ciudad</th><th>Estado</th><th>Hora de llegada</th></tr></thead><tbody>
       ${advisors.map(a=>{
         const r = entry.records[a.dni];
         const st = r? r.status:'PR';
         return `<tr><td>${escapeHtml(a.nombre)}</td><td>${escapeHtml(a.dni)}</td><td>${escapeHtml(a.ciudad||'-')}</td>
-        <td><span class="badge ${st}">${st}${r&&r.turnoTarde?' · TT':''}</span></td></tr>`;
+        <td><span class="badge ${st}">${st}${r&&r.turnoTarde?' · TT':''}${r&&r.tardanza?' · Tardanza':''}</span></td>
+        <td>${r&&r.tardanza&&r.horaLlegada? escapeHtml(r.horaLlegada) : '-'}</td></tr>`;
       }).join('')}
       </tbody></table></div>
-      <p class="muted" style="margin-top:10px;">Registrado por ${escapeHtml(entry.submittedBy)} el ${new Date(entry.submittedAt).toLocaleString('es-PE')}</p>
+      ${entry.edits && entry.edits.length? `<p class="link" style="margin-top:10px;" onclick='openHistoryModal(${JSON.stringify(entry.edits)})'>Ver historial de modificaciones (${entry.edits.length})</p>` : ''}
     </div>`;
     main.innerHTML = html; return;
   }
 
   html += `
-      <div class="table-wrap"><table><thead><tr><th>Asesor</th><th>DNI</th><th>Ciudad</th><th>Estado del día</th><th>Turno tarde</th></tr></thead><tbody>
+      <div class="table-wrap"><table><thead><tr><th>Asesor</th><th>DNI</th><th>Ciudad</th><th>Estado del día</th><th>Turno tarde</th><th>Tardanza</th><th>Hora de llegada</th></tr></thead><tbody>
       ${advisors.map(a=>`
         <tr>
           <td>${escapeHtml(a.nombre)}</td>
@@ -473,6 +496,8 @@ async function renderLiderApp(){
             ${STATUS_ORDER.map(s=>`<option value="${s}" ${s==='PR'?'selected':''}>${s} - ${STATUS[s].label}</option>`).join('')}
           </select></td>
           <td style="text-align:center"><input type="checkbox" id="tt-${a.dni}"></td>
+          <td style="text-align:center"><input type="checkbox" id="tar-${a.dni}" onchange="onTardanzaChange('${a.dni}')"></td>
+          <td><input type="time" id="hl-${a.dni}" style="display:none;"></td>
         </tr>`).join('')}
       </tbody></table></div>
       <div style="display:flex;justify-content:flex-end;margin-top:16px;">
@@ -483,13 +508,50 @@ async function renderLiderApp(){
   main.innerHTML = html;
 }
 
+function onTardanzaChange(dni){
+  const chk = document.getElementById('tar-'+dni);
+  const hl = document.getElementById('hl-'+dni);
+  hl.style.display = chk.checked ? 'block' : 'none';
+  if(!chk.checked) hl.value = '';
+}
+
 function onStatusChange(sel){
   sel.className = 'status-select ' + sel.value;
   const tt = document.getElementById('tt-'+sel.dataset.dni);
-  if(sel.value!=='PR'){ tt.checked=false; tt.disabled=true; } else { tt.disabled=false; }
+  const tar = document.getElementById('tar-'+sel.dataset.dni);
+  const hl = document.getElementById('hl-'+sel.dataset.dni);
+  if(sel.value!=='PR'){
+    if(tt){ tt.checked=false; tt.disabled=true; }
+    if(tar){ tar.checked=false; tar.disabled=true; }
+    if(hl){ hl.style.display='none'; hl.value=''; }
+  } else {
+    if(tt) tt.disabled=false;
+    if(tar) tar.disabled=false;
+  }
 }
 
 function liderChangeDate(v){ LIDER_STATE.date = v; renderLiderApp(); }
+
+function openHistoryModal(edits){
+  const bg = document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML = `
+    <div class="modal" style="width:560px;max-height:80vh;overflow:auto;">
+      <h3>Historial de modificaciones</h3>
+      ${edits.map(e=>`
+        <div style="border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:10px;">
+          <div style="font-size:12.5px;"><b>${escapeHtml(e.user)}</b> · ${new Date(e.ts).toLocaleString('es-PE')}</div>
+          ${e.note? `<div class="muted" style="margin:4px 0;">Motivo: ${escapeHtml(e.note)}</div>` : ''}
+          ${e.changes && e.changes.length? `
+            <table style="margin-top:6px;"><thead><tr><th>Asesor</th><th>Antes</th><th>Después</th></tr></thead><tbody>
+            ${e.changes.map(c=>`<tr><td>${escapeHtml(c.nombre)}</td><td>${escapeHtml(c.from)}</td><td>${escapeHtml(c.to)}</td></tr>`).join('')}
+            </tbody></table>` : `<div class="muted">Sin cambios de estado detectados.</div>`}
+        </div>`).join('')}
+      <div style="display:flex;justify-content:flex-end;">
+        <button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">Cerrar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+}
 
 async function submitLiderAttendance(){
   const advisors = (await getAdvisors()).filter(a=>a.lider===SESSION.name && a.estado==='ACTIVO');
@@ -498,7 +560,13 @@ async function submitLiderAttendance(){
     const sel = document.querySelector(`select[data-dni="${a.dni}"]`);
     const status = sel? sel.value : 'PR';
     const tt = document.getElementById('tt-'+a.dni);
-    records[a.dni] = { status, turnoTarde: status==='PR' && tt ? tt.checked : false };
+    const tar = document.getElementById('tar-'+a.dni);
+    const hl = document.getElementById('hl-'+a.dni);
+    records[a.dni] = {
+      status, turnoTarde: status==='PR' && tt ? tt.checked : false,
+      tardanza: status==='PR' && tar ? tar.checked : false,
+      horaLlegada: status==='PR' && tar && tar.checked && hl ? hl.value : ''
+    };
   });
   const date = LIDER_STATE.date, ym = ymOf(date);
   const monthData = await getMonthData(ym);
@@ -524,13 +592,14 @@ async function renderLiderHistory(){
         <button class="btn btn-ghost btn-sm" onclick="renderLiderApp()">← Volver a registrar</button>
       </div>
       ${dates.length===0? '<div class="empty">Aún no has registrado asistencia este mes.</div>' : `
-      <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Presentes</th><th>Ausentes</th><th>Vacaciones</th><th>Bajas</th><th>Hora de registro</th></tr></thead><tbody>
+      <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Presentes</th><th>Tardanzas</th><th>Ausentes</th><th>Vacaciones</th><th>Bajas</th><th>Hora de registro</th></tr></thead><tbody>
       ${dates.map(d=>{
         const e = monthData[d][SESSION.name];
         const vals = Object.values(e.records);
         const c = code=>vals.filter(r=>r.status===code).length;
-        return `<tr><td>${fmtDate(d)}</td><td>${c('PR')}</td><td>${c('AI')+c('DM')+c('LSG')}</td><td>${c('VA')}</td><td>${c('BJ')}</td>
-        <td>${new Date(e.submittedAt).toLocaleString('es-PE')}</td></tr>`;
+        const tard = vals.filter(r=>r.tardanza).length;
+        return `<tr><td>${fmtDate(d)}</td><td>${c('PR')}</td><td>${tard}</td><td>${c('AI')+c('DM')+c('LSG')}</td><td>${c('VA')}</td><td>${c('BJ')}</td>
+        <td>${new Date(e.submittedAt).toLocaleString('es-PE')} ${puntualidadBadge(e.submittedAt)}</td></tr>`;
       }).join('')}
       </tbody></table></div>`}
     </div>
@@ -642,10 +711,13 @@ async function renderTabRegistrar(){
     main.innerHTML = html; return;
   }
   if(entry && entry.locked){
-    html += `<div class="locked-banner">🔒 Ya fue registrado por ${escapeHtml(entry.submittedBy)}. Como Coordinador puedes corregirlo; quedará un registro en el historial.</div>`;
+    html += `<div class="locked-banner">🔒 Ya fue registrado por ${escapeHtml(entry.submittedBy)}. Como Coordinador puedes corregirlo; quedará un registro en el historial.</div>
+    <p class="muted">Registrado el ${new Date(entry.submittedAt).toLocaleString('es-PE')} ${puntualidadBadge(entry.submittedAt)}
+    ${entry.edits && entry.edits.length? ` · <span class="link" onclick='openHistoryModal(${JSON.stringify(entry.edits)})'>Ver historial de modificaciones (${entry.edits.length})</span>` : ''}
+    </p>`;
   }
   html += `
-      <div class="table-wrap"><table><thead><tr><th>Asesor</th><th>DNI</th><th>Ciudad</th><th>Estado del día</th><th>Turno tarde</th></tr></thead><tbody>
+      <div class="table-wrap"><table><thead><tr><th>Asesor</th><th>DNI</th><th>Ciudad</th><th>Estado del día</th><th>Turno tarde</th><th>Tardanza</th><th>Hora de llegada</th></tr></thead><tbody>
       ${advisors.map(a=>{
         const r = entry? entry.records[a.dni] : null;
         const st = r? r.status : 'PR';
@@ -655,6 +727,8 @@ async function renderTabRegistrar(){
             ${STATUS_ORDER.map(s=>`<option value="${s}" ${s===st?'selected':''}>${s} - ${STATUS[s].label}</option>`).join('')}
           </select></td>
           <td style="text-align:center"><input type="checkbox" id="tt-${a.dni}" ${r&&r.turnoTarde?'checked':''} ${st!=='PR'?'disabled':''}></td>
+          <td style="text-align:center"><input type="checkbox" id="tar-${a.dni}" onchange="onTardanzaChange('${a.dni}')" ${r&&r.tardanza?'checked':''} ${st!=='PR'?'disabled':''}></td>
+          <td><input type="time" id="hl-${a.dni}" value="${r&&r.horaLlegada?r.horaLlegada:''}" style="display:${r&&r.tardanza?'block':'none'};"></td>
         </tr>`;
       }).join('')}
       </tbody></table></div>
@@ -676,14 +750,23 @@ async function submitAdminAttendance(isEdit){
     const sel = document.querySelector(`select[data-dni="${a.dni}"]`);
     const status = sel? sel.value : 'PR';
     const tt = document.getElementById('tt-'+a.dni);
-    records[a.dni] = { status, turnoTarde: status==='PR' && tt ? tt.checked : false };
+    const tar = document.getElementById('tar-'+a.dni);
+    const hl = document.getElementById('hl-'+a.dni);
+    records[a.dni] = {
+      status, turnoTarde: status==='PR' && tt ? tt.checked : false,
+      tardanza: status==='PR' && tar ? tar.checked : false,
+      horaLlegada: status==='PR' && tar && tar.checked && hl ? hl.value : ''
+    };
   });
   const monthData = await getMonthData(ym);
   if(!monthData[date]) monthData[date] = {};
   const prevEntry = monthData[date][lider];
   const note = document.getElementById('editNote');
   const edits = (prevEntry && prevEntry.edits) ? prevEntry.edits.slice() : [];
-  if(isEdit){ edits.push({ ts:new Date().toISOString(), user:SESSION.name, note: note? note.value : '' }); }
+  if(isEdit){
+    const changes = diffRecords(prevEntry? prevEntry.records : {}, records, advisors);
+    edits.push({ ts:new Date().toISOString(), user:SESSION.name, note: note? note.value : '', changes });
+  }
   monthData[date][lider] = {
     records, submittedBy: prevEntry? prevEntry.submittedBy : SESSION.name,
     submittedAt: prevEntry? prevEntry.submittedAt : new Date().toISOString(),
@@ -699,12 +782,11 @@ async function submitAdminAttendance(isEdit){
 
 // ---------- TAB: ASESORES ----------
 let ASESORES_FILTER = '';
+let ASESORES_DESDE = '';
+let ASESORES_HASTA = '';
 async function renderTabAsesores(){
   const advisors = await getAdvisors();
-  const lideres = await getLideres();
   const main = document.getElementById('adminMain');
-  const filtered = advisors.filter(a =>
-    !ASESORES_FILTER || (a.nombre+a.dni+a.lider+a.ciudad).toLowerCase().includes(ASESORES_FILTER.toLowerCase()));
   main.innerHTML = `
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
@@ -715,30 +797,53 @@ async function renderTabAsesores(){
           <button class="btn btn-primary btn-sm" onclick="openAdvisorModal()">+ Nuevo asesor</button>
         </div>
       </div>
-      <div class="field" style="max-width:320px;margin-top:12px;">
-        <input placeholder="Buscar por nombre, DNI, líder o ciudad" oninput="ASESORES_FILTER=this.value; renderTabAsesores()" value="${escapeHtml(ASESORES_FILTER)}">
+      <div class="toolbar" style="margin-top:12px;">
+        <div class="field" style="min-width:260px;"><label>Buscar</label>
+          <input id="asesorSearch" placeholder="Nombre, DNI, líder o ciudad" value="${escapeHtml(ASESORES_FILTER)}"></div>
+        <div class="field"><label>Ingreso desde</label><input type="date" id="asesorDesde" value="${ASESORES_DESDE}"></div>
+        <div class="field"><label>Ingreso hasta</label><input type="date" id="asesorHasta" value="${ASESORES_HASTA}"></div>
+        <div><button class="btn btn-ghost btn-sm" onclick="clearAsesorFilters()">Limpiar filtros</button></div>
       </div>
-      <div class="table-wrap" style="margin-top:14px;">
-        <table><thead><tr><th>DNI</th><th>Nombre</th><th>Líder</th><th>Estado</th><th>Cuartil</th><th>Modalidad</th><th>Correo</th><th>Ciudad</th><th></th></tr></thead>
-        <tbody>
-        ${filtered.map(a=>`
+      <div id="asesoresCount" class="muted" style="margin:2px 0 8px;"></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>DNI</th><th>Nombre</th><th>Líder</th><th>Estado</th><th>Cuartil</th><th>Modalidad</th><th>Correo</th><th>Ciudad</th><th>Ingreso</th><th></th></tr></thead>
+        <tbody id="asesoresTbody"></tbody></table>
+      </div>
+    </div>
+  `;
+  document.getElementById('asesorSearch').addEventListener('input', e=>{ ASESORES_FILTER = e.target.value; updateAsesoresTable(); });
+  document.getElementById('asesorDesde').addEventListener('change', e=>{ ASESORES_DESDE = e.target.value; updateAsesoresTable(); });
+  document.getElementById('asesorHasta').addEventListener('change', e=>{ ASESORES_HASTA = e.target.value; updateAsesoresTable(); });
+  await updateAsesoresTable();
+}
+async function updateAsesoresTable(){
+  const advisors = await getAdvisors();
+  const filtered = advisors.filter(a=>{
+    if(ASESORES_FILTER && !((a.nombre||'')+(a.dni||'')+(a.lider||'')+(a.ciudad||'')).toLowerCase().includes(ASESORES_FILTER.toLowerCase())) return false;
+    if(ASESORES_DESDE && (!a.fechaIngreso || a.fechaIngreso < ASESORES_DESDE)) return false;
+    if(ASESORES_HASTA && (!a.fechaIngreso || a.fechaIngreso > ASESORES_HASTA)) return false;
+    return true;
+  });
+  const countEl = document.getElementById('asesoresCount');
+  if(countEl) countEl.textContent = (ASESORES_FILTER||ASESORES_DESDE||ASESORES_HASTA)? `${filtered.length} de ${advisors.length} asesores` : '';
+  const tbody = document.getElementById('asesoresTbody');
+  if(!tbody) return;
+  tbody.innerHTML = filtered.map(a=>`
           <tr>
             <td>${escapeHtml(a.dni)}</td><td>${escapeHtml(a.nombre)}</td><td>${escapeHtml(a.lider)}</td>
             <td>${a.estado==='ACTIVO'?'<span class="badge PR">ACTIVO</span>':'<span class="badge BJ">INACTIVO</span>'}</td>
             <td>${escapeHtml(a.cuartil||'-')}</td><td>${escapeHtml(a.modalidad||'-')}</td>
             <td>${escapeHtml(a.correo||'-')}</td><td>${escapeHtml(a.ciudad||'-')}</td>
+            <td>${escapeHtml(a.fechaIngreso||'-')}</td>
             <td><button class="icon-btn" onclick='openAdvisorModal(${JSON.stringify(a.dni)})'>✏️</button>
                 <button class="icon-btn" onclick='deleteAdvisor(${JSON.stringify(a.dni)})'>🗑️</button></td>
-          </tr>`).join('') || `<tr><td colspan="9" class="empty">Sin resultados</td></tr>`}
-        </tbody></table>
-      </div>
-    </div>
-  `;
+          </tr>`).join('') || `<tr><td colspan="10" class="empty">Sin resultados</td></tr>`;
 }
+function clearAsesorFilters(){ ASESORES_FILTER=''; ASESORES_DESDE=''; ASESORES_HASTA=''; renderTabAsesores(); }
 async function openAdvisorModal(dni){
   const advisors = await getAdvisors();
   const lideres = await getLideres();
-  const a = dni? advisors.find(x=>x.dni===dni) : {dni:'',nombre:'',lider:lideres[0]?.nombre||'',estado:'ACTIVO',cuartil:'',modalidad:'PRESENCIAL',correo:'',ciudad:''};
+  const a = dni? advisors.find(x=>x.dni===dni) : {dni:'',nombre:'',lider:lideres[0]?.nombre||'',estado:'ACTIVO',cuartil:'',modalidad:'PRESENCIAL',correo:'',ciudad:'',fechaIngreso:''};
   const bg = document.createElement('div'); bg.className='modal-bg';
   bg.innerHTML = `
     <div class="modal">
@@ -756,6 +861,9 @@ async function openAdvisorModal(dni){
       <div class="row">
         <div class="field"><label>Correo</label><input id="m_correo" value="${escapeHtml(a.correo)}"></div>
         <div class="field"><label>Ciudad</label><input id="m_ciudad" value="${escapeHtml(a.ciudad)}" placeholder="Lima, Trujillo, Arequipa..."></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Fecha de ingreso</label><input type="date" id="m_fecha" value="${escapeHtml(a.fechaIngreso||'')}"></div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
         <button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">Cancelar</button>
@@ -775,6 +883,7 @@ async function saveAdvisorModal(originalDni){
     modalidad: document.getElementById('m_modalidad').value,
     correo: document.getElementById('m_correo').value.trim(),
     ciudad: document.getElementById('m_ciudad').value.trim(),
+    fechaIngreso: document.getElementById('m_fecha').value,
   };
   if(!data.dni || !data.nombre){ toast('DNI y Nombre son obligatorios'); return; }
   if(originalDni){
@@ -803,7 +912,7 @@ function openImportModal(){
   bg.innerHTML = `
     <div class="modal" style="width:560px;">
       <h3>Cargar dotación (asesor + líder)</h3>
-      <p class="muted">Sube tu archivo de dotación (.xlsx o .csv) con columnas en este orden: <b>DNI, Nombre, Líder, Estado, Cuartil, Modalidad, Correo, Ciudad</b>. Así no tienes que registrar asesor por asesor.</p>
+      <p class="muted">Sube tu archivo de dotación (.xlsx o .csv) con columnas en este orden: <b>DNI, Nombre, Líder, Estado, Cuartil, Modalidad, Correo, Ciudad, Fecha de ingreso (opcional, AAAA-MM-DD)</b>. Así no tienes que registrar asesor por asesor.</p>
       <div class="field"><label>Archivo Excel o CSV</label><input type="file" id="fileBox" accept=".xlsx,.xls,.csv"></div>
       <p class="muted" style="margin:8px 0;">— o pega las filas manualmente —</p>
       <textarea id="csvBox" rows="5" placeholder="48853044,CANGO SANCHEZ ELIZABETH,BRACO SANTISTEBAN,ACTIVO,Q1,PRESENCIAL,u48853044@konecta.com,Lima"></textarea>
@@ -825,7 +934,7 @@ function rowsToAdvisorRecords(rows){
       dni, nombre: String(r[1]||'').trim(), lider: String(r[2]||'').trim(),
       estado: String(r[3]||'ACTIVO').trim().toUpperCase()||'ACTIVO',
       cuartil: String(r[4]||'').trim(), modalidad: String(r[5]||'PRESENCIAL').trim().toUpperCase()||'PRESENCIAL',
-      correo: String(r[6]||'').trim(), ciudad: String(r[7]||'').trim()
+      correo: String(r[6]||'').trim(), ciudad: String(r[7]||'').trim(), fechaIngreso: String(r[8]||'').trim()
     });
   });
   return out;
@@ -866,8 +975,8 @@ async function doImport(){
 }
 async function exportAdvisorsExcel(){
   const advisors = await getAdvisors();
-  const rows = [['DNI','Nombre','Líder','Estado','Cuartil','Modalidad','Correo','Ciudad']];
-  advisors.forEach(a=>rows.push([a.dni,a.nombre,a.lider,a.estado,a.cuartil,a.modalidad,a.correo,a.ciudad]));
+  const rows = [['DNI','Nombre','Líder','Estado','Cuartil','Modalidad','Correo','Ciudad','Fecha de ingreso']];
+  advisors.forEach(a=>rows.push([a.dni,a.nombre,a.lider,a.estado,a.cuartil,a.modalidad,a.correo,a.ciudad,a.fechaIngreso||'']));
   const ws = XLSX.utils.aoa_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Asesores');
@@ -875,26 +984,49 @@ async function exportAdvisorsExcel(){
 }
 
 // ---------- TAB: LÍDERES ----------
+let LIDERES_YM = todayStr().slice(0,7);
 async function renderTabLideres(){
   const lideres = await getLideres();
   const advisors = await getAdvisors();
   const main = document.getElementById('adminMain');
+  const monthData = await getMonthData(LIDERES_YM);
+
+  const statsFor = (liderName)=>{
+    const stats = {PR:0,AI:0,DM:0,LSG:0,VA:0,BJ:0,TARD:0};
+    Object.keys(monthData).forEach(dateStr=>{
+      const e = monthData[dateStr][liderName];
+      if(!e) return;
+      Object.values(e.records).forEach(r=>{
+        stats[r.status] = (stats[r.status]||0)+1;
+        if(r.tardanza) stats.TARD++;
+      });
+    });
+    return stats;
+  };
+
   main.innerHTML = `
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         <h3 style="margin:0;">Líderes (${lideres.length})</h3>
-        <button class="btn btn-primary btn-sm" onclick="openLiderModal()">+ Nuevo líder</button>
+        <div style="display:flex;gap:10px;align-items:flex-end;">
+          <div class="field" style="margin-bottom:0;"><label>Mes</label><input type="month" value="${LIDERES_YM}" onchange="LIDERES_YM=this.value; renderTabLideres()"></div>
+          <button class="btn btn-primary btn-sm" onclick="openLiderModal()">+ Nuevo líder</button>
+        </div>
       </div>
       <div class="table-wrap" style="margin-top:14px;">
-        <table><thead><tr><th>Nombre</th><th>PIN</th><th>Asesores a cargo</th><th></th></tr></thead>
+        <table><thead><tr><th>Nombre</th><th>PIN</th><th>Asesores</th><th>Presentes</th><th>Tardanzas</th><th>Ausentes</th><th>Descansos</th><th>Licencias</th><th>Vacaciones</th><th>Bajas</th><th></th></tr></thead>
         <tbody>
-        ${lideres.map(l=>`
-          <tr><td>${escapeHtml(l.nombre)}</td><td>••••</td>
+        ${lideres.map(l=>{
+          const s = statsFor(l.nombre);
+          return `<tr><td>${escapeHtml(l.nombre)}</td><td>••••</td>
           <td>${advisors.filter(a=>a.lider===l.nombre && a.estado==='ACTIVO').length}</td>
+          <td>${s.PR}</td><td>${s.TARD}</td><td>${s.AI}</td><td>${s.DM}</td><td>${s.LSG}</td><td>${s.VA}</td><td>${s.BJ}</td>
           <td><button class="icon-btn" onclick='openLiderModal(${JSON.stringify(l.nombre)})'>✏️</button>
-              <button class="icon-btn" onclick='deleteLider(${JSON.stringify(l.nombre)})'>🗑️</button></td></tr>`).join('') || `<tr><td colspan="4" class="empty">Aún no hay líderes</td></tr>`}
+              <button class="icon-btn" onclick='deleteLider(${JSON.stringify(l.nombre)})'>🗑️</button></td></tr>`;
+        }).join('') || `<tr><td colspan="11" class="empty">Aún no hay líderes</td></tr>`}
         </tbody></table>
       </div>
+      <p class="muted" style="margin-top:10px;">Los conteos son del mes seleccionado, según lo registrado día a día.</p>
     </div>
   `;
 }
@@ -978,6 +1110,59 @@ async function renderTabDashboard(){
   perDay.forEach(d=>Object.keys(monthTotals).forEach(k=>monthTotals[k]+=d.counts[k]||0));
   const totalAusentesMonth = monthTotals.AI+monthTotals.DM+monthTotals.LSG;
 
+  // --- Ranking por líder y por asesor (para gráficos) ---
+  const rankScope = advisors.filter(a=>a.estado==='ACTIVO' && (!ADMIN_DASH_STATE.ciudad || a.ciudad===ADMIN_DASH_STATE.ciudad));
+  const rankDniSet = new Set(rankScope.map(a=>a.dni));
+  const perLiderCounts = {}, perAdvisorCounts = {};
+  rankScope.forEach(a=>{
+    perAdvisorCounts[a.dni] = {PR:0,AI:0,DM:0,LSG:0,VA:0,BJ:0};
+    if(!perLiderCounts[a.lider]) perLiderCounts[a.lider] = {PR:0,AI:0,DM:0,LSG:0,VA:0,BJ:0};
+  });
+  for(let d=1; d<=nDays; d++){
+    const dateStr = ym+'-'+String(d).padStart(2,'0');
+    if(isSunday(dateStr)) continue;
+    const dayEntries = monthData[dateStr] || {};
+    Object.keys(dayEntries).forEach(liderName=>{
+      const recs = dayEntries[liderName].records || {};
+      Object.keys(recs).forEach(dni=>{
+        if(!rankDniSet.has(dni)) return;
+        const r = recs[dni];
+        const a = rankScope.find(x=>x.dni===dni);
+        const ln = a? a.lider : liderName;
+        perAdvisorCounts[dni][r.status] = (perAdvisorCounts[dni][r.status]||0)+1;
+        if(!perLiderCounts[ln]) perLiderCounts[ln] = {PR:0,AI:0,DM:0,LSG:0,VA:0,BJ:0};
+        perLiderCounts[ln][r.status] = (perLiderCounts[ln][r.status]||0)+1;
+      });
+    });
+  }
+  const pctAus = c => { const tot=(c.PR||0)+(c.AI||0)+(c.DM||0)+(c.LSG||0)+(c.VA||0)+(c.BJ||0);
+    const aus=(c.AI||0)+(c.DM||0)+(c.LSG||0); return tot? aus/tot*100 : null; };
+  const liderRanking = Object.keys(perLiderCounts)
+    .map(name=>({name, pct: pctAus(perLiderCounts[name])}))
+    .filter(x=>x.pct!==null).sort((a,b)=>a.pct-b.pct);
+  const advisorRanking = Object.keys(perAdvisorCounts)
+    .map(dni=>{ const a=rankScope.find(x=>x.dni===dni); return {dni, nombre:a?a.nombre:dni, lider:a?a.lider:'', pct:pctAus(perAdvisorCounts[dni])}; })
+    .filter(x=>x.pct!==null).sort((a,b)=>a.pct-b.pct);
+  const advisorBest = advisorRanking.slice(0,5);
+  const advisorWorst = advisorRanking.slice(-5).reverse().filter(x=>!advisorBest.includes(x));
+  const barColor = pct => pct<=5? 'var(--pr-fg)' : pct<=15? 'var(--va-fg)' : 'var(--ai-fg)';
+  const bar = (label, pct) => `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12.5px;">
+      <div style="width:170px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(label)}">${escapeHtml(label)}</div>
+      <div style="flex:1;background:#eef2f8;border-radius:6px;height:16px;position:relative;overflow:hidden;">
+        <div style="width:${Math.min(100,pct).toFixed(1)}%;background:${barColor(pct)};height:100%;border-radius:6px;"></div>
+      </div>
+      <div style="width:52px;text-align:right;font-weight:700;flex-shrink:0;">${pct.toFixed(1)}%</div>
+    </div>`;
+  const motivoTotal = monthTotals.AI+monthTotals.DM+monthTotals.LSG+monthTotals.VA+monthTotals.BJ;
+  const motivoSegs = [
+    {key:'AI', label:'Ausente Injustificado', color:'var(--ai-fg)'},
+    {key:'DM', label:'Descanso Médico', color:'var(--dm-fg)'},
+    {key:'LSG', label:'Licencia Sin Goce', color:'var(--lsg-fg)'},
+    {key:'VA', label:'Vacaciones', color:'var(--va-fg)'},
+    {key:'BJ', label:'Baja', color:'var(--bj-fg)'},
+  ].map(s=>({...s, count:monthTotals[s.key], pct: motivoTotal? (monthTotals[s.key]/motivoTotal*100):0}));
+
   const metricRows = [
     {key:'PR', label:'PRESENTES'},
     {key:'TT', label:'TURNO TARDE'},
@@ -1040,6 +1225,36 @@ async function renderTabDashboard(){
       </table>
       </div>
       <p class="muted" style="margin-top:10px;">🎌 = feriado nacional (Perú). Domingos se muestran sin datos por defecto.</p>
+    </div>
+
+    <div class="card">
+      <h3>Ranking de líderes — % de ausentismo (mejor a peor)</h3>
+      ${liderRanking.length? liderRanking.map(l=>bar(l.name, l.pct)).join('') : '<div class="empty">Aún no hay datos suficientes este mes.</div>'}
+    </div>
+
+    <div class="row" style="align-items:stretch;">
+      <div class="card" style="flex:1;">
+        <h3>Top 5 asesores — mejor presentismo</h3>
+        ${advisorBest.length? advisorBest.map(a=>bar(a.nombre, a.pct)).join('') : '<div class="empty">Sin datos suficientes.</div>'}
+      </div>
+      <div class="card" style="flex:1;">
+        <h3>Top 5 asesores — peor presentismo</h3>
+        ${advisorWorst.length? advisorWorst.map(a=>bar(a.nombre, a.pct)).join('') : '<div class="empty">Sin datos suficientes.</div>'}
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Desglose de motivos (mes)</h3>
+      ${motivoTotal? `
+      <div style="display:flex;width:100%;height:26px;border-radius:8px;overflow:hidden;margin-bottom:14px;">
+        ${motivoSegs.filter(s=>s.count>0).map(s=>`<div style="width:${s.pct.toFixed(2)}%;background:${s.color};" title="${s.label}: ${s.count} (${s.pct.toFixed(1)}%)"></div>`).join('')}
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;">
+        ${motivoSegs.map(s=>`<div style="font-size:12.5px;display:flex;align-items:center;gap:6px;">
+          <span style="width:11px;height:11px;border-radius:3px;background:${s.color};display:inline-block;"></span>
+          ${s.label}: <b>${s.count}</b> (${s.pct.toFixed(1)}%)
+        </div>`).join('')}
+      </div>` : '<div class="empty">Aún no hay ausencias registradas este mes.</div>'}
     </div>
   `;
 }
