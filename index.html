@@ -913,6 +913,8 @@ function openImportModal(){
     <div class="modal" style="width:560px;">
       <h3>Cargar dotación (asesor + líder)</h3>
       <p class="muted">Sube tu archivo de dotación (.xlsx o .csv) con columnas en este orden: <b>DNI, Nombre, Líder, Estado, Cuartil, Modalidad, Correo, Ciudad, Fecha de ingreso (opcional, AAAA-MM-DD)</b>. Así no tienes que registrar asesor por asesor.</p>
+      <p class="muted" style="background:#eaf1fd;padding:8px 10px;border-radius:8px;">La asistencia ya registrada <b>nunca se borra ni se modifica</b> al cargar dotación — esto solo actualiza nombres, líderes, estado, etc.</p>
+      <div class="field"><label>Mes de vigencia de esta actualización (para tu registro/auditoría)</label><input type="month" id="importMes" value="${todayStr().slice(0,7)}"></div>
       <div class="field"><label>Archivo Excel o CSV</label><input type="file" id="fileBox" accept=".xlsx,.xls,.csv"></div>
       <p class="muted" style="margin:8px 0;">— o pega las filas manualmente —</p>
       <textarea id="csvBox" rows="5" placeholder="48853044,CANGO SANCHEZ ELIZABETH,BRACO SANTISTEBAN,ACTIVO,Q1,PRESENCIAL,u48853044@konecta.com,Lima"></textarea>
@@ -952,7 +954,9 @@ async function applyImportedRecords(records){
   });
   await saveAdvisors(advisors);
   await saveLideres(lideres);
-  await pushAudit({ user:SESSION.name, action:'Carga de dotación', details:`${added} nuevos, ${updated} actualizados` });
+  const mesEl = document.getElementById('importMes');
+  const mes = mesEl ? mesEl.value : todayStr().slice(0,7);
+  await pushAudit({ user:SESSION.name, action:'Carga de dotación', details:`Vigencia: ${mes} · ${added} nuevos, ${updated} actualizados` });
   document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
   toast(`Cargado: ${added} nuevos, ${updated} actualizados`);
   renderTabAsesores();
@@ -1127,8 +1131,7 @@ async function renderTabDashboard(){
       Object.keys(recs).forEach(dni=>{
         if(!rankDniSet.has(dni)) return;
         const r = recs[dni];
-        const a = rankScope.find(x=>x.dni===dni);
-        const ln = a? a.lider : liderName;
+        const ln = liderName; // se atribuye al líder que registró ese día realmente, no al líder actual del asesor
         perAdvisorCounts[dni][r.status] = (perAdvisorCounts[dni][r.status]||0)+1;
         if(!perLiderCounts[ln]) perLiderCounts[ln] = {PR:0,AI:0,DM:0,LSG:0,VA:0,BJ:0};
         perLiderCounts[ln][r.status] = (perLiderCounts[ln][r.status]||0)+1;
