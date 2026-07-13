@@ -201,6 +201,23 @@ async function sSet(key, value){
     return true;
   }catch(e){ console.error('sSet failed', key, e); return false; }
 }
+async function sDelete(key){
+  try{
+    await fetch(API_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'delete', key })
+    });
+    return true;
+  }catch(e){ console.error('sDelete failed', key, e); return false; }
+}
+async function sListKeys(prefix){
+  try{
+    const res = await fetch(API_URL + '?action=list&prefix=' + encodeURIComponent(prefix||''));
+    const data = await res.json();
+    return data.keys || [];
+  }catch(e){ console.error('sListKeys failed', e); return []; }
+}
 async function checkConnection(){
   if(!API_URL || API_URL.indexOf('PEGA_AQUI')===0) return false;
   try{
@@ -668,13 +685,15 @@ async function renderAdminApp(tab){
         ${sideItem('dashboard','📊','Dashboard')}
         ${sideItem('coadmins','🔐','Accesos')}
         ${sideItem('historial','🕓','Historial')}
+        ${SESSION.name==='Coordinador Principal' ? sideItem('reiniciar','🗑️','Reiniciar') : ''}
       </div>
       <div class="main" id="adminMain"></div>
     </div>
   `);
   const fn = {
     registrar: renderTabRegistrar, asesores: renderTabAsesores, lideres: renderTabLideres,
-    dashboard: renderTabDashboard, coadmins: renderTabCoadmins, historial: renderTabHistorial
+    dashboard: renderTabDashboard, coadmins: renderTabCoadmins, historial: renderTabHistorial,
+    reiniciar: renderTabReiniciar
   }[ADMIN_TAB];
   await fn();
 }
@@ -1334,7 +1353,10 @@ async function renderTabHistorial(){
   const main = document.getElementById('adminMain');
   main.innerHTML = `
     <div class="card">
-      <h3>Historial de cambios</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <h3 style="margin:0;">Historial de cambios</h3>
+        <button class="btn btn-ghost btn-sm" onclick="downloadFullBackup()">⬇ Descargar respaldo completo</button>
+      </div>
       <p class="muted">Registro de todas las acciones realizadas en el sistema: altas, ediciones, correcciones de asistencia, etc.</p>
       <div class="table-wrap" style="margin-top:14px;">
         <table><thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>
@@ -1342,6 +1364,94 @@ async function renderTabHistorial(){
       </div>
     </div>
   `;
+}
+
+// ---------- TAB: REINICIAR (solo Coordinador Principal) ----------
+async function renderTabReiniciar(){
+  const main = document.getElementById('adminMain');
+  if(SESSION.name!=='Coordinador Principal'){
+    main.innerHTML = `<div class="card"><div class="empty">Esta sección solo está disponible para el Coordinador Principal.</div></div>`;
+    return;
+  }
+  main.innerHTML = `
+    <div class="card">
+      <h3>Borrar asistencia de un mes específico</h3>
+      <p class="muted">Elimina toda la asistencia registrada (y sus tardanzas) de un mes y año puntual. No afecta a otros meses ni a tu lista de asesores/líderes.</p>
+      <div class="toolbar">
+        <div class="field"><label>Mes y año a borrar</label><input type="month" id="resetMes" value="${todayStr().slice(0,7)}"></div>
+        <div><button class="btn btn-danger" onclick="resetMonth()">Borrar este mes</button></div>
+      </div>
+    </div>
+    <div class="card" style="border-color:#f3c5c5;">
+      <h3 style="color:#c0281f;">⚠️ Reiniciar todo el sistema</h3>
+      <p class="muted">Esto borra <b>absolutamente todo</b>: asesores, líderes, tu contraseña de coordinador, accesos adicionales, historial y la asistencia de todos los meses. Úsalo solo si quieres dejar el sistema como recién instalado (por ejemplo, para terminar pruebas antes de usarlo en producción).</p>
+      <button class="btn btn-danger" onclick="openFactoryResetModal()">Reiniciar todo el sistema</button>
+    </div>
+  `;
+}
+
+async function resetMonth(){
+  const ym = document.getElementById('resetMes').value;
+  if(!ym){ toast('Elige un mes'); return; }
+  if(!confirm(`¿Seguro que quieres borrar TODA la asistencia registrada de ${ym}? Esta acción no se puede deshacer.`)) return;
+  await sDelete('attendance:'+ym);
+  await pushAudit({ user:SESSION.name, action:'Reinicio de mes', details:`Se borró toda la asistencia de ${ym}` });
+  toast(`Asistencia de ${ym} borrada`);
+  renderTabReiniciar();
+}
+
+function openFactoryResetModal(){
+  const bg = document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>⚠️ Confirmar reinicio total</h3>
+      <p class="muted">Esta acción borra todo de forma permanente: asesores, líderes, accesos, historial y asistencia de todos los meses. Escribe <b>REINICIAR</b> para confirmar.</p>
+      <div class="field"><input id="resetConfirmText" placeholder="Escribe REINICIAR"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">Cancelar</button>
+        <button class="btn btn-danger" onclick="doFactoryReset()">Borrar todo</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+}
+
+async function doFactoryReset(){
+  const val = document.getElementById('resetConfirmText').value;
+  if(val!=='REINICIAR'){ toast('Escribe exactamente REINICIAR para confirmar'); return; }
+  toast('Borrando todo, un momento…');
+  const keys = await sListKeys('');
+  for(const key of keys){ await sDelete(key); }
+  document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
+  CACHE = { advisors:null, lideres:null, coadmins:null, adminPass:null };
+  SESSION = null;
+  toast('Sistema reiniciado');
+  boot();
+}
+
+async function downloadFullBackup(){
+  toast('Preparando respaldo…');
+  const backup = {
+    generadoEl: new Date().toISOString(),
+    advisors: await getAdvisors(),
+    lideres: await getLideres(),
+    coadmins: (await getCoadmins()).map(c=>({nombre:c.nombre})), // sin contraseñas por seguridad
+    audit_log: await getAudit(),
+    attendance: {}
+  };
+  try{
+    const res = await fetch(API_URL + '?action=list&prefix=attendance:');
+    const data = await res.json();
+    for(const key of (data.keys||[])){
+      backup.attendance[key] = await sGet(key);
+    }
+  }catch(e){ console.error('backup fetch failed', e); }
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `respaldo_presentismo_${todayStr()}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast('Respaldo descargado');
 }
 
 // ---------------------------------------------------------------------------
